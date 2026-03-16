@@ -422,59 +422,69 @@ Rules are evaluated in declaration order. The first matching rule fires and the 
 
 ## Checkpoints
 
-Checkpoints are automatically saved to the `checkpoints/` directory when the bus reaches quiescence (no more pending messages). Each checkpoint file is a complete snapshot:
+When `checkpoints.dir` is set in `flux.config.yaml`, the runtime automatically saves a checkpoint to disk after every inject (at quiescence). Each checkpoint is a JSON file named `<id>.json`:
 
-```yaml
-# checkpoints/2026-03-14T14-22-00-A3f9.flux.yaml
-
-id: A3f9
-timestamp: 2026-03-14T14:22:00Z
-parent: B2e8
-tick: 47
-merkle_root: "a3f9c2..."
-
-units:
-  cart:
-    state:
-      items:
-        - { sku: widget-blue, qty: 2, price: 9.99, added_at: 3 }
-      totals:
-        subtotal: 19.98
-        coupon: null
-  inventory:
-    state:
-      stock:
-        - { sku: widget-blue, qty: 48 }
-
-bus_log:
-  - { id: 0, tick: 1, topic: commerce.cart.add, sku: widget-blue, price: 9.99, qty: 1, parentId: null }
-  - { id: 1, tick: 1, topic: commerce.cart.updated, total: 9.99, item_count: 1, parentId: 0 }
-  # ...full log
-
-defects: []
+```json
+{
+  "id": "a3f9c2d1",
+  "name": null,
+  "timestamp": "2026-03-14T14:22:00.000Z",
+  "tick": 47,
+  "merkle_root": "b2e84f10",
+  "unit_hashes": { "cart": "e3a1b2c4" },
+  "units": {
+    "cart": {
+      "items":  [{ "sku": "widget-blue", "qty": 2, "price": 9.99 }],
+      "totals": [{ "subtotal": 19.98, "coupon": null }]
+    }
+  },
+  "bus_log": [
+    { "id": 0, "tick": 1, "parentId": null, "topic": "commerce.cart.add",     "payload": { "sku": "widget-blue", "price": 9.99, "qty": 1 } },
+    { "id": 1, "tick": 1, "parentId": 0,    "topic": "commerce.cart.updated",  "payload": { "total": 9.99, "item_count": 1 } }
+  ],
+  "defects": []
+}
 ```
 
-### Naming a checkpoint
+### Listing checkpoints
 
 ```bash
-flux checkpoint save --name empty_cart
+flux checkpoint list
 ```
 
-Saves the current state as `checkpoints/named/empty_cart.flux.yaml`. Named checkpoints can be used as scenario starting points.
+### Saving a named checkpoint
+
+```bash
+flux checkpoint save empty_cart
+```
+
+Saves the current runtime state with `name: "empty_cart"` so it can be found by name later. The file is still stored as `<id>.json` in the checkpoints directory.
 
 ### Restoring a checkpoint
 
 ```bash
-flux checkpoint restore empty_cart
+flux checkpoint restore empty_cart   # by name
+flux checkpoint restore a3f9c2d1     # by full id
+flux checkpoint restore a3f9         # by id prefix
 ```
+
+Tells the running runtime (`flux run`) to reload its state from that checkpoint. All in-flight messages are discarded. Injection continues normally from the restored state.
 
 ### Diffing two checkpoints
 
 ```bash
-flux diff A3f9 B2e8
+flux diff a3f9c2d1 b2e84f10
 ```
 
-Shows which unit states changed and which messages were emitted between the two checkpoints. Uses Merkle subtree comparison — only changed subtrees are printed.
+Offline command — no running runtime needed. Shows which unit state tables changed and which messages were added between the two checkpoints.
+
+### Verifying determinism with replay
+
+```bash
+flux replay a3f9c2d1
+```
+
+Starts a fresh runtime, re-injects only the root messages (those with `parentId: null`) from the checkpoint's bus log, and compares the resulting unit state hashes against the original. If any unit hash differs, the command reports which units diverged and exits with code 1.
 
 ---
 
@@ -490,7 +500,7 @@ description: |
   Loyalty member applies SAVE10 to a cart with one item.
   Total should reflect 10% discount before checkout.
 
-start_checkpoint: empty_cart   # optional — defaults to clean state
+start_checkpoint: empty_cart   # planned — not yet implemented; currently always starts from clean state
 
 steps:
 
@@ -745,8 +755,6 @@ scenarios:
 
 checkpoints:
   dir: ./checkpoints
-  max_stored: 500           # older checkpoints are pruned beyond this count
-  keep_named: true          # named checkpoints are never pruned
 
 studio:
   port: 4000

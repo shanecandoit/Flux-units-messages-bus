@@ -209,6 +209,38 @@ describe('checkProject', () => {
     const { warnings } = checkProject(cfg, {})
     assert.equal(warnings.length, 0)
   })
+
+  it('errors on unit with no name', () => {
+    const cfg = [{ name: undefined, channels: [], stateDecl: {}, rules: [] }]
+    const { errors, ok } = checkProject(cfg, {})
+    assert.equal(ok, false)
+    assert.ok(errors.some(e => e.includes("missing a 'name'")))
+  })
+
+  it('errors on duplicate unit names', () => {
+    const unit = { name: 'foo', channels: [], stateDecl: {}, rules: [] }
+    const { errors, ok } = checkProject([unit, { ...unit }], {})
+    assert.equal(ok, false)
+    assert.ok(errors.some(e => e.includes("Duplicate unit name") && e.includes('foo')))
+  })
+
+  it('warns on rule with no name', () => {
+    const cfg = [{
+      name: 'x',
+      channels: [],
+      stateDecl: {},
+      rules: [{ name: undefined, match: { topic: 'foo.bar' }, guard: null, do: () => {}, matchAll: false }],
+    }]
+    const { warnings } = checkProject(cfg, { 'foo.bar': {} })
+    assert.ok(warnings.some(w => w.includes("missing a 'name'")))
+  })
+
+  it('warns on duplicate rule names within a unit', () => {
+    const rule = { name: 'dup', match: { topic: 'foo.bar' }, guard: null, do: () => {}, matchAll: false }
+    const cfg = [{ name: 'x', channels: [], stateDecl: {}, rules: [rule, { ...rule }] }]
+    const { warnings } = checkProject(cfg, { 'foo.bar': {} })
+    assert.ok(warnings.some(w => w.includes("Duplicate rule name") && w.includes('dup')))
+  })
 })
 
 // ── loadUnitConfig — error paths ──────────────────────────────────────────────

@@ -420,20 +420,29 @@ const commands = {
       rt.inject(msg.topic, msg.payload)
     }
 
-    // Compare final merkle roots
+    // Compare unit state hashes only.
+    // The bus log is intentionally excluded: replayed entries have different
+    // sequential ids and wall-clock timestamps, so the bus hash will always
+    // differ even when the logic is perfectly deterministic.
     const snap = rt.snapshot()
-    const unitHashes = {}
-    for (const [name, state] of Object.entries(snap.units)) {
-      unitHashes[name] = hash(state)
+    let allMatch = true
+    const mismatches = []
+    for (const [name, replayState] of Object.entries(snap.units)) {
+      const replayHash = hash(replayState)
+      const origHash   = original.unit_hashes[name]
+      if (replayHash !== origHash) {
+        allMatch = false
+        mismatches.push({ name, original: origHash, replay: replayHash })
+      }
     }
-    const replayRoot = hash({ units: unitHashes, bus: hash(snap.busLog) })
 
-    if (replayRoot === original.merkle_root) {
-      console.log(`✓ Replay verified — merkle root matches (${replayRoot})`)
+    if (allMatch) {
+      console.log(`✓ Replay verified — all unit state hashes match`)
     } else {
       console.log('✗ Replay diverged!')
-      console.log(`  original: ${original.merkle_root}`)
-      console.log(`  replay:   ${replayRoot}`)
+      for (const m of mismatches) {
+        console.log(`  ${m.name}: original=${m.original}  replay=${m.replay}`)
+      }
       process.exit(1)
     }
   },
