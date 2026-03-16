@@ -1,0 +1,21 @@
+{
+  "name": "flux-runtime",
+  "version": "0.1.0",
+  "description": "Message-driven reactive programming runtime for Node.js",
+  "type": "module",
+  "main": "src/runtime.js",
+  "bin": {
+    "flux": "./bin/flux.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:watch": "node --test --watch test/*.test.js",
+    "studio": "node bin/flux.js studio",
+    "dev": "node bin/flux.js dev"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": ["reactive", "message-bus", "units", "scenarios"],
+  "license": "MIT"
+}
