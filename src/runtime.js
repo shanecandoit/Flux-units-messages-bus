@@ -53,15 +53,9 @@ export class Runtime {
     for (const msg of messages) {
       const units = this.dispatcher.match(msg.topic)
       for (const unit of units) {
-        const fired = unit.handleMessage(msg, (topic, payload) => {
+        unit.handleMessage(msg, (topic, payload) => {
           emitted.push({ topic, payload, parentId: msg.id })
         })
-        if (!fired) continue
-        // match_all: continue to next unit even after firing
-        if (!unit.isMatchAll(msg.topic)) {
-          // default: first matching unit per topic wins
-          // (units are ordered by registration; match_all units break this)
-        }
       }
     }
 
@@ -107,22 +101,20 @@ export class UnitInstance {
     this._rules = rules
   }
 
-  /** Try to handle a message. Returns true if a rule fired. */
+  /** Try to handle a message. Returns true if any rule fired. */
   handleMessage(msg, emit) {
+    let anyFired = false
     for (const rule of this._rules) {
       const bindings = this._matchRule(rule, msg)
       if (bindings === null) continue
       if (rule.guard && !rule.guard(this.state, bindings)) continue
 
       rule.do(this.state, bindings, msg, emit)
-      if (!rule.matchAll) return true
-      // matchAll: keep going through rules, but mark as fired
+      anyFired = true
+      if (!rule.matchAll) return true  // stop after first non-matchAll rule
+      // matchAll: keep going through remaining rules
     }
-    return false
-  }
-
-  isMatchAll(topic) {
-    return this._rules.some(r => r.matchAll && this._topicMatches(r.match.topic, topic))
+    return anyFired
   }
 
   /** Returns binding map or null if no match. */
@@ -147,7 +139,11 @@ export class UnitInstance {
     if (pattern === topic) return true
     if (typeof pattern === 'string' && pattern.endsWith('.*')) {
       const prefix = pattern.slice(0, -2)
-      return topic === prefix || topic.startsWith(prefix + '.')
+      // Single level only: foo.bar.* matches foo.bar.X but not foo.bar.X.Y
+      if (topic.startsWith(prefix + '.')) {
+        const remainder = topic.slice(prefix.length + 1)
+        return !remainder.includes('.')
+      }
     }
     return false
   }
@@ -165,7 +161,8 @@ export class UnitInstance {
   _makeTable(initialRows = []) {
     const rows = [...initialRows]
     return {
-      _rows: rows,
+      /** Single-row record accessor — returns the first (and only) row. */
+      get() { return rows[0] ?? null },
       insert(row) { rows.push({ ...row }) },
       find(key) {
         // Key can be a value (matched against first column) or a predicate fn
@@ -181,17 +178,15 @@ export class UnitInstance {
       count() { return rows.length },
       clear() { rows.splice(0) },
       all() { return [...rows] },
+      // Internal — used only by snapshotState; not part of the rules API
+      _rows: rows,
     }
   }
 
   snapshotState() {
     const snap = {}
-    for (const [key, val] of Object.entries(this.state)) {
-      if (val && Array.isArray(val._rows)) {
-        snap[key] = val._rows.map(r => ({ ...r }))
-      } else {
-        snap[key] = { ...val }
-      }
+    for (const [key, table] of Object.entries(this.state)) {
+      snap[key] = table._rows.map(r => ({ ...r }))
     }
     return snap
   }

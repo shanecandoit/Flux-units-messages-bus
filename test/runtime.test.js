@@ -24,10 +24,10 @@ function makeCartUnit() {
           } else {
             state.items.insert({ sku: b['$sku'], qty: b['$qty'], price: b['$price'] })
           }
-          const row = state.totals._rows[0]
-          row.subtotal += b['$price'] * b['$qty']
+          const totals = state.totals.get()
+          totals.subtotal += b['$price'] * b['$qty']
           emit('commerce.cart.updated', {
-            total: row.subtotal,
+            total: totals.subtotal,
             item_count: state.items.count(),
           })
         },
@@ -36,11 +36,11 @@ function makeCartUnit() {
         name: 'apply_coupon',
         match: { topic: 'commerce.cart.coupon_applied', code: '$code', pct: '$pct' },
         do(state, b, msg, emit) {
-          const row = state.totals._rows[0]
-          row.coupon = b['$code']
-          row.subtotal = row.subtotal * (1 - b['$pct'] / 100)
+          const totals = state.totals.get()
+          totals.coupon = b['$code']
+          totals.subtotal = totals.subtotal * (1 - b['$pct'] / 100)
           emit('commerce.cart.updated', {
-            total: row.subtotal,
+            total: totals.subtotal,
             item_count: state.items.count(),
           })
         },
@@ -49,11 +49,11 @@ function makeCartUnit() {
         name: 'checkout',
         match: { topic: 'commerce.checkout.submit' },
         do(state, b, msg, emit) {
-          const row = state.totals._rows[0]
-          const total = row.subtotal
+          const totals = state.totals.get()
+          const total = totals.subtotal
           state.items.clear()
-          row.subtotal = 0
-          row.coupon = null
+          totals.subtotal = 0
+          totals.coupon = null
           emit('commerce.checkout.complete', { total })
         },
       },
@@ -61,7 +61,7 @@ function makeCartUnit() {
   })
 }
 
-// ── UnitInstance tests ─────────────────────────────────────────────────────
+// ── UnitInstance — rule matching ───────────────────────────────────────────
 
 describe('UnitInstance — rule matching', () => {
   let unit
@@ -90,15 +90,14 @@ describe('UnitInstance — rule matching', () => {
   it('apply_coupon reduces subtotal', () => {
     const add = { topic: 'commerce.cart.add', payload: { sku: 'w', price: 10, qty: 1 } }
     unit.handleMessage(add, () => {})
-    assert.equal(unit.state.totals._rows[0].subtotal, 10)
+    assert.equal(unit.state.totals.get().subtotal, 10)
 
     const coupon = { topic: 'commerce.cart.coupon_applied', payload: { code: 'SAVE10', pct: 10 } }
     unit.handleMessage(coupon, () => {})
-    assert.ok(Math.abs(unit.state.totals._rows[0].subtotal - 9) < 0.001)
+    assert.ok(Math.abs(unit.state.totals.get().subtotal - 9) < 0.001)
   })
 
   it('guard prevents firing when item limit reached', () => {
-    // Fill up to 100 items
     for (let i = 0; i < 100; i++) {
       unit.state.items.insert({ sku: `sku-${i}`, qty: 1, price: 1 })
     }
@@ -125,13 +124,166 @@ describe('UnitInstance — rule matching', () => {
     unit.handleMessage(checkout, (t, p) => emitted.push({ t, p }))
 
     assert.equal(unit.state.items.count(), 0)
-    assert.equal(unit.state.totals._rows[0].subtotal, 0)
+    assert.equal(unit.state.totals.get().subtotal, 0)
     assert.equal(emitted[0].t, 'commerce.checkout.complete')
     assert.equal(emitted[0].p.total, 10)
   })
 })
 
-// ── Runtime integration tests ──────────────────────────────────────────────
+// ── match_all ──────────────────────────────────────────────────────────────
+
+describe('UnitInstance — match_all', () => {
+  it('match_all rule fires alongside a normal rule', () => {
+    const fired = []
+    const unit = new UnitInstance({
+      name: 'multi',
+      channels: ['evt.*'],
+      initialState: {},
+      rules: [
+        {
+          name: 'logger',
+          match: { topic: 'evt.*' },
+          matchAll: true,
+          do(state, b, msg, emit) { fired.push('logger') },
+        },
+        {
+          name: 'handler',
+          match: { topic: 'evt.foo' },
+          do(state, b, msg, emit) { fired.push('handler') },
+        },
+      ],
+    })
+
+    const msg = { topic: 'evt.foo', payload: {} }
+    const result = unit.handleMessage(msg, () => {})
+
+    assert.ok(result, 'handleMessage should return true')
+    assert.deepEqual(fired, ['logger', 'handler'])
+  })
+
+  it('match_all rule fires even when a later normal rule also fires', () => {
+    const fired = []
+    const unit = new UnitInstance({
+      name: 'multi',
+      channels: ['evt.*'],
+      initialState: {},
+      rules: [
+        {
+          name: 'audit',
+          match: { topic: 'evt.*' },
+          matchAll: true,
+          do(state, b, msg, emit) { fired.push('audit') },
+        },
+        {
+          name: 'specific',
+          match: { topic: 'evt.bar' },
+          do(state, b, msg, emit) { fired.push('specific') },
+        },
+        {
+          name: 'never',
+          match: { topic: 'evt.bar' },
+          do(state, b, msg, emit) { fired.push('never') },
+        },
+      ],
+    })
+
+    const msg = { topic: 'evt.bar', payload: {} }
+    unit.handleMessage(msg, () => {})
+
+    // audit fires (matchAll), specific fires (normal — stops loop), never skipped
+    assert.deepEqual(fired, ['audit', 'specific'])
+  })
+
+  it('handleMessage returns true when only matchAll rules fire', () => {
+    const unit = new UnitInstance({
+      name: 'u',
+      channels: ['x.y'],
+      initialState: {},
+      rules: [{
+        name: 'only',
+        match: { topic: 'x.y' },
+        matchAll: true,
+        do() {},
+      }],
+    })
+    const result = unit.handleMessage({ topic: 'x.y', payload: {} }, () => {})
+    assert.equal(result, true)
+  })
+
+  it('multiple units both receive the same message', () => {
+    const rt = new Runtime()
+    const log = []
+
+    rt.addUnit(new UnitInstance({
+      name: 'a',
+      channels: ['shared.event'],
+      initialState: {},
+      rules: [{ name: 'r', match: { topic: 'shared.event' }, do(s, b, m, emit) { log.push('a') } }],
+    }))
+    rt.addUnit(new UnitInstance({
+      name: 'b',
+      channels: ['shared.event'],
+      initialState: {},
+      rules: [{ name: 'r', match: { topic: 'shared.event' }, do(s, b, m, emit) { log.push('b') } }],
+    }))
+
+    rt.inject('shared.event', {})
+    assert.ok(log.includes('a'))
+    assert.ok(log.includes('b'))
+  })
+})
+
+// ── Topic matching (runtime vs dispatcher consistency) ────────────────────
+
+describe('UnitInstance — topic matching', () => {
+  function unit(pattern) {
+    return new UnitInstance({
+      name: 'u',
+      channels: [pattern],
+      initialState: {},
+      rules: [{ name: 'r', match: { topic: pattern }, do() {} }],
+    })
+  }
+
+  it('exact match fires', () => {
+    const u = unit('foo.bar')
+    assert.equal(u.handleMessage({ topic: 'foo.bar', payload: {} }, () => {}), true)
+  })
+
+  it('wildcard matches single level', () => {
+    const u = unit('foo.bar.*')
+    assert.equal(u.handleMessage({ topic: 'foo.bar.baz', payload: {} }, () => {}), true)
+  })
+
+  it('wildcard does not match parent topic', () => {
+    const u = unit('foo.bar.*')
+    assert.equal(u.handleMessage({ topic: 'foo.bar', payload: {} }, () => {}), false)
+  })
+
+  it('wildcard does not match two levels deep', () => {
+    const u = unit('foo.bar.*')
+    assert.equal(u.handleMessage({ topic: 'foo.bar.baz.qux', payload: {} }, () => {}), false)
+  })
+
+  it('dispatcher and runtime agree: wildcard single level', () => {
+    const rt = new Runtime()
+    const fired = []
+    rt.addUnit(new UnitInstance({
+      name: 'u',
+      channels: ['a.b.*'],
+      initialState: {},
+      rules: [{ name: 'r', match: { topic: 'a.b.*' }, do(s, b, m, emit) { fired.push(m.topic) } }],
+    }))
+
+    rt.inject('a.b.ok', {})        // should fire
+    rt.inject('a.b.ok.deep', {})   // should NOT fire (dispatcher won't route it)
+    rt.inject('a.b', {})           // should NOT fire
+
+    assert.deepEqual(fired, ['a.b.ok'])
+  })
+})
+
+// ── Runtime integration ────────────────────────────────────────────────────
 
 describe('Runtime — integration', () => {
   let rt
@@ -143,7 +295,6 @@ describe('Runtime — integration', () => {
 
   it('inject returns all new bus entries including downstream', () => {
     const entries = rt.inject('commerce.cart.add', { sku: 'w', price: 5, qty: 2 })
-    // Original + commerce.cart.updated emitted by rule
     assert.equal(entries.length, 2)
     assert.equal(entries[0].topic, 'commerce.cart.add')
     assert.equal(entries[1].topic, 'commerce.cart.updated')
@@ -154,6 +305,26 @@ describe('Runtime — integration', () => {
     assert.equal(entries[1].parentId, entries[0].id)
   })
 
+  it('multi-level cascade preserves parentId chain', () => {
+    // A → B → C chain: inject A, rule emits B, rule emits C
+    const rt2 = new Runtime()
+    rt2.addUnit(new UnitInstance({
+      name: 'chain',
+      channels: ['chain.*'],
+      initialState: {},
+      rules: [
+        { name: 'a', match: { topic: 'chain.a' }, do(s, b, m, emit) { emit('chain.b', {}) } },
+        { name: 'b', match: { topic: 'chain.b' }, do(s, b, m, emit) { emit('chain.c', {}) } },
+        { name: 'c', match: { topic: 'chain.c' }, do() {} },
+      ],
+    }))
+
+    const entries = rt2.inject('chain.a', {})
+    assert.equal(entries.length, 3)
+    assert.equal(entries[1].parentId, entries[0].id)  // B caused by A
+    assert.equal(entries[2].parentId, entries[1].id)  // C caused by B
+  })
+
   it('full checkout sequence produces correct final state', () => {
     rt.inject('commerce.cart.add', { sku: 'widget', price: 9.99, qty: 1 })
     rt.inject('commerce.cart.coupon_applied', { code: 'SAVE10', pct: 10 })
@@ -161,7 +332,7 @@ describe('Runtime — integration', () => {
 
     const state = rt.state('cart')
     assert.equal(state.items.count(), 0)
-    assert.equal(state.totals._rows[0].subtotal, 0)
+    assert.equal(state.totals.get().subtotal, 0)
   })
 
   it('snapshot captures current tick and unit states', () => {
@@ -172,8 +343,13 @@ describe('Runtime — integration', () => {
     assert.equal(snap.units.cart.items.length, 1)
   })
 
+  it('snapshot totals row is included', () => {
+    rt.inject('commerce.cart.add', { sku: 'w', price: 5, qty: 1 })
+    const snap = rt.snapshot()
+    assert.equal(snap.units.cart.totals[0].subtotal, 5)
+  })
+
   it('throws on tick limit exceeded (cascade guard)', () => {
-    // Create a unit that immediately re-emits the same message → infinite loop
     const loopy = new UnitInstance({
       name: 'loopy',
       channels: ['loop.ping'],
@@ -181,9 +357,7 @@ describe('Runtime — integration', () => {
       rules: [{
         name: 'bounce',
         match: { topic: 'loop.ping' },
-        do(state, b, msg, emit) {
-          emit('loop.ping', {})
-        },
+        do(state, b, msg, emit) { emit('loop.ping', {}) },
       }],
     })
     const rt2 = new Runtime({ tickLimit: 10 })
@@ -201,7 +375,7 @@ describe('State table helpers', () => {
     unit = new UnitInstance({
       name: 'test',
       channels: [],
-      initialState: { rows: [] },
+      initialState: { rows: [], record: [{ val: 42 }] },
       rules: [],
     })
   })
@@ -210,6 +384,14 @@ describe('State table helpers', () => {
     unit.state.rows.insert({ id: 'a', val: 1 })
     unit.state.rows.insert({ id: 'b', val: 2 })
     assert.equal(unit.state.rows.count(), 2)
+  })
+
+  it('get() returns first row (record accessor)', () => {
+    assert.equal(unit.state.record.get().val, 42)
+  })
+
+  it('get() returns null on empty table', () => {
+    assert.equal(unit.state.rows.get(), null)
   })
 
   it('find by first-column value', () => {
@@ -246,7 +428,6 @@ describe('State table helpers', () => {
     unit.state.rows.insert({ id: 'a', val: 1 })
     const all = unit.state.rows.all()
     assert.equal(all.length, 1)
-    // Mutating the copy does not affect the table
     all.push({ id: 'fake' })
     assert.equal(unit.state.rows.count(), 1)
   })

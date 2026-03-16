@@ -5,7 +5,7 @@ export function addItem(state, b, msg, emit) {
   } else {
     state.items.insert({ sku: b['$sku'], qty: b['$qty'], price: b['$price'] })
   }
-  const totals = state.totals._rows[0]
+  const totals = state.totals.get()
   totals.subtotal += b['$price'] * b['$qty']
   emit('commerce.cart.updated', {
     total: totals.subtotal,
@@ -14,7 +14,7 @@ export function addItem(state, b, msg, emit) {
 }
 
 export function applyCoupon(state, b, msg, emit) {
-  const totals = state.totals._rows[0]
+  const totals = state.totals.get()
   totals.coupon = b['$code']
   totals.subtotal = totals.subtotal * (1 - b['$pct'] / 100)
   emit('commerce.cart.updated', {
@@ -24,7 +24,7 @@ export function applyCoupon(state, b, msg, emit) {
 }
 
 export function checkout(state, b, msg, emit) {
-  const totals = state.totals._rows[0]
+  const totals = state.totals.get()
   const total = totals.subtotal
   state.items.clear()
   totals.subtotal = 0
