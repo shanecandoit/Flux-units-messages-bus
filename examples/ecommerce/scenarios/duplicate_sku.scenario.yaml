@@ -1,0 +1,44 @@
+name: Duplicate SKU increments quantity
+description: |
+  Adding the same SKU twice should increment the existing row's quantity
+  rather than insert a second row. The subtotal must reflect both units.
+  This is a good regression scenario — a naive implementation inserts a
+  duplicate row and the item count goes to 2 instead of staying at 1.
+
+steps:
+
+  - description: First add — blue widget ($9.99 × 1)
+    inject:
+      topic: commerce.cart.add
+      sku: widget-blue
+      price: 9.99
+      qty: 1
+    expect:
+      - field: cart.totals.subtotal
+        op: equals
+        value: 9.99
+    expect_message:
+      - topic: commerce.cart.updated
+        field: item_count
+        op: equals
+        value: 1
+
+  - description: Second add — same SKU again ($9.99 × 1)
+    inject:
+      topic: commerce.cart.add
+      sku: widget-blue
+      price: 9.99
+      qty: 1
+    expect:
+      - field: cart.totals.subtotal
+        op: equals
+        value: 19.98
+    must_not:
+      - field: cart.totals.subtotal
+        op: less_than
+        value: 19.98
+    expect_message:
+      - topic: commerce.cart.updated
+        field: item_count
+        op: equals
+        value: 1
