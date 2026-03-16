@@ -112,14 +112,16 @@ function checkMessageAssertion(busEntries, exp) {
 
 function evaluate(actual, op, expected) {
   const exp = coerce(expected)
+  // Coerce actual for numeric comparisons so YAML "5" and 5 both match.
+  const act = coerce(actual)
 
   switch (op) {
     case 'equals':
-      if (actual == exp) return ok()
+      if (act === exp) return ok()
       return fail(`expected ${JSON.stringify(exp)}, got ${JSON.stringify(actual)}`)
 
     case 'not_equals':
-      if (actual != exp) return ok()
+      if (act !== exp) return ok()
       return fail(`expected value to not equal ${JSON.stringify(exp)}`)
 
     case 'greater_than':
@@ -133,8 +135,8 @@ function evaluate(actual, op, expected) {
     case 'contains':
       if (Array.isArray(actual)) {
         const hit = actual.some(row =>
-          Object.values(row)[0] == exp ||
-          Object.values(row).some(v => v == exp)
+          Object.values(row)[0] === exp ||
+          Object.values(row).some(v => coerce(v) === exp)
         )
         if (hit) return ok()
         return fail(`array does not contain ${JSON.stringify(exp)}`)

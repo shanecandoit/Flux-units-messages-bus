@@ -74,6 +74,9 @@ export async function loadUnitConfig(unitFilePath) {
 
 async function compileRule(decl, unitDir) {
   const doFn = await loadRuleFunction(decl.do, unitDir)
+  if (decl.guard !== undefined && decl.guard !== null && typeof decl.guard !== 'string') {
+    throw new Error(`[${decl.name}] guard must be a JS expression string, got ${typeof decl.guard}`)
+  }
   const guardFn = decl.guard
     ? new Function('state', 'b', `return !!(${decl.guard})`)
     : null

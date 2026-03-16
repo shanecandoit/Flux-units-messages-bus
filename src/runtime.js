@@ -21,8 +21,11 @@ export class Runtime {
     this._tickLimit = tickLimit
   }
 
-  /** Register a compiled unit instance. */
+  /** Register a compiled unit instance. Throws if a unit with that name is already registered. */
   addUnit(unit) {
+    if (this._units.has(unit.name)) {
+      throw new Error(`Unit '${unit.name}' is already registered`)
+    }
     this._units.set(unit.name, unit)
     this.dispatcher.registerUnit(unit)
   }
@@ -111,8 +114,8 @@ export class UnitInstance {
 
       rule.do(this.state, bindings, msg, emit)
       anyFired = true
-      if (!rule.matchAll) return true  // stop after first non-matchAll rule
-      // matchAll: keep going through remaining rules
+      if (!rule.matchAll) return true  // non-matchAll rule: stop on first match
+      // matchAll rule: continue checking remaining rules
     }
     return anyFired
   }

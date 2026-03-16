@@ -5,7 +5,7 @@
  *   - All unit states
  *   - Full bus log
  *   - Tick number
- *   - Merkle-style hashes for fast diffing (simplified: JSON hash of each subtree)
+ *   - Per-unit content hashes for O(n) diffing (SHA-256 of JSON-serialised state)
  *
  * Checkpoints are serialised as JSON. (YAML conversion is a CLI concern.)
  */
@@ -39,7 +39,18 @@ export function buildCheckpoint(runtime, { id, name } = {}) {
 }
 
 /**
- * Diff two checkpoints. Returns an object describing what changed.
+ * Diff two checkpoints. The first argument is the earlier checkpoint.
+ *
+ * Returns:
+ *   {
+ *     tick_delta:      number,
+ *     changed_units:   { [unitName]: { from: state | null, to: state | null } },
+ *     unchanged_units: string[],
+ *     new_messages:    BusEntry[],  // entries added after checkpoint a
+ *   }
+ *
+ * Note: if b.bus_log is shorter than a.bus_log (shouldn't happen in normal use),
+ * new_messages will be empty.
  */
 export function diffCheckpoints(a, b) {
   const changedUnits = {}

@@ -74,6 +74,17 @@ describe('Bus', () => {
     assert.deepEqual(seen, ['a.b', 'c.d'])
   })
 
+  it('multiple onAppend listeners all fire independently', () => {
+    const a = [], b = []
+    bus.onAppend(e => a.push(e.topic))
+    bus.onAppend(e => b.push(e.id))
+    bus.append('x.y', {})
+    assert.equal(a.length, 1)
+    assert.equal(b.length, 1)
+    assert.equal(a[0], 'x.y')
+    assert.equal(typeof b[0], 'number')
+  })
+
   it('restore rebuilds log and resets nextId', () => {
     const entries = [
       { id: 0, tick: 1, parentId: null, topic: 'x.y', payload: {}, ts: 0 },

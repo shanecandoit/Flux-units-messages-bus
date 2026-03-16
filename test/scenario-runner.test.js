@@ -11,37 +11,44 @@ const FIXTURE = join(__dirname, 'fixtures', 'simple')
 // ── resolveField ──────────────────────────────────────────────────────────
 
 describe('resolveField', () => {
-  let rt
-
-  // Build a small runtime to test against
-  before_each_hack: {
-    // We use a module-level setup instead of beforeEach since we only need one
-  }
-
-  it('resolves a record field', async () => {
+  async function makeRt() {
     const { unitConfigs } = await loadProject(FIXTURE)
     const { createRuntime } = await import('../src/loader.js')
-    const rt = createRuntime(unitConfigs)
+    return createRuntime(unitConfigs)
+  }
+
+  it('resolves a record field (3-part path)', async () => {
+    const rt = await makeRt()
     rt.inject('counter.increment', { amount: 42 })
-    const val = resolveField(rt, 'counter.totals.count')
-    assert.equal(val, 42)
+    assert.equal(resolveField(rt, 'counter.totals.count'), 42)
   })
 
-  it('resolves a full record (2-part path)', async () => {
-    const { unitConfigs, createRuntime: cr } = await import('../src/loader.js')
-    const { loadProject: lp } = await import('../src/loader.js')
-    const { unitConfigs: uc } = await lp(FIXTURE)
-    const { createRuntime } = await import('../src/loader.js')
-    const rt = createRuntime(uc)
+  it('resolves a full record (2-part path) as array', async () => {
+    const rt = await makeRt()
     const val = resolveField(rt, 'counter.totals')
     assert.ok(Array.isArray(val))
+    assert.equal(val[0].count, 0)
   })
 
   it('returns undefined for unknown unit', async () => {
-    const { unitConfigs } = await loadProject(FIXTURE)
-    const { createRuntime } = await import('../src/loader.js')
-    const rt = createRuntime(unitConfigs)
+    const rt = await makeRt()
     assert.equal(resolveField(rt, 'nonexistent.table.field'), undefined)
+  })
+
+  it('returns undefined for unknown table', async () => {
+    const rt = await makeRt()
+    assert.equal(resolveField(rt, 'counter.nosuchTable.field'), undefined)
+  })
+
+  it('returns undefined for deeply nested path with intermediate undefined', async () => {
+    const rt = await makeRt()
+    // totals.count.sub.field — count is a number, not an object
+    assert.equal(resolveField(rt, 'counter.totals.count.sub'), undefined)
+  })
+
+  it('returns undefined for path shorter than 2 parts', async () => {
+    const rt = await makeRt()
+    assert.equal(resolveField(rt, 'counter'), undefined)
   })
 })
 
@@ -191,6 +198,82 @@ describe('runScenario — operators', () => {
   it('not_exists fails when field is present', async () => {
     const r = await run('not_exists', undefined)
     assert.equal(r.passed, false)
+  })
+
+  it('unknown operator returns failure', async () => {
+    const r = await run('definitely_not_an_op', 5)
+    assert.equal(r.passed, false)
+    assert.ok(r.steps[0].failures[0].includes('unknown operator'))
+  })
+
+  it('equals passes when YAML string value numerically matches state number', async () => {
+    // coerce("5") → 5, state count = 5 → 5 === 5
+    const r = await run('equals', '5', 5)
+    assert.equal(r.passed, true)
+  })
+
+  it('not_equals fails when coerced values match', async () => {
+    const r = await run('not_equals', '5', 5)
+    assert.equal(r.passed, false)
+  })
+})
+
+describe('runScenario — contains operator', () => {
+  // Build an inline unit config with an items table to test 'contains'
+  function makeBagConfig() {
+    return {
+      name: 'bag',
+      channels: ['bag.*'],
+      stateDecl: { items: { sku: 'string(32) not null', index: 'sku' } },
+      rules: [{
+        name: 'add',
+        match: { topic: 'bag.add', sku: '$sku' },
+        guard: null,
+        do(state, b) { state.items.insert({ sku: b['$sku'] }) },
+        matchAll: false,
+      }],
+    }
+  }
+
+  it('contains passes when array row has matching first-column value', async () => {
+    const cfg = makeBagConfig()
+    const sc = {
+      name: 'contains-test',
+      steps: [
+        {
+          description: 'add widget',
+          inject: { topic: 'bag.add', payload: { sku: 'widget-blue' } },
+          expect: [],
+          mustNot: [],
+          expectMessage: [],
+        },
+        {
+          description: 'contains check',
+          inject: { topic: 'bag.add', payload: { sku: 'widget-red' } },
+          expect: [{ field: 'bag.items', op: 'contains', value: 'widget-blue' }],
+          mustNot: [],
+          expectMessage: [],
+        },
+      ],
+    }
+    const result = await runScenario(sc, [cfg])
+    assert.equal(result.passed, true, formatResults([result]))
+  })
+
+  it('contains fails when value not in array', async () => {
+    const cfg = makeBagConfig()
+    const sc = {
+      name: 'contains-miss',
+      steps: [{
+        description: 'no such sku',
+        inject: { topic: 'bag.add', payload: { sku: 'widget-blue' } },
+        expect: [{ field: 'bag.items', op: 'contains', value: 'nonexistent' }],
+        mustNot: [],
+        expectMessage: [],
+      }],
+    }
+    const result = await runScenario(sc, [cfg])
+    assert.equal(result.passed, false)
   })
 })
 

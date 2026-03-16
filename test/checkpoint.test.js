@@ -145,7 +145,6 @@ describe('diffCheckpoints', () => {
     rt.inject('counter.inc', { n: 1 })
     rt.inject('counter.inc', { n: 1 })
     const cp2 = buildCheckpoint(rt)
-    assert.ok(diff => diff.tick_delta >= 0)
     const diff = diffCheckpoints(cp1, cp2)
     assert.ok(diff.tick_delta > 0)
   })
