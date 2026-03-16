@@ -1,0 +1,18 @@
+name: score
+
+channels:
+  - ball.scored
+
+state:
+
+  totals:
+    left:  u32 not null default 0
+    right: u32 not null default 0
+
+rules:
+
+  - name: on_score
+    match:
+      topic:  ball.scored
+      player: $player
+    do: score.rules.js#onScore

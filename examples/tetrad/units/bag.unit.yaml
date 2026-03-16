@@ -1,0 +1,21 @@
+name: bag
+
+channels:
+  - piece.locked
+
+# The bag holds the "next piece" queue.  In classic Tetris this is a
+# shuffled bag of all 7 piece types.  Here we cycle through 0–6 in order
+# (no randomness — the allowed JS subset forbids Math.random).
+# Tests can inject piece.locked with specific types to control the sequence.
+state:
+
+  next:
+    type:    u32 not null default 1   # type of the next piece to spawn
+    counter: u32 not null default 0   # how many pieces have been spawned
+
+rules:
+
+  - name: spawn_next
+    match:
+      topic: piece.locked
+    do: bag.rules.js#spawnNext

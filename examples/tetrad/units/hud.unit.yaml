@@ -1,0 +1,26 @@
+name: hud
+
+channels:
+  - lines.cleared
+  - game.over
+
+state:
+
+  stats:
+    score: u32 not null default 0
+    level: u32 not null default 1
+    lines: u32 not null default 0
+
+rules:
+
+  - name: on_lines_cleared
+    match:
+      topic: lines.cleared
+      count: $count
+      score: $score
+    do: hud.rules.js#onLinesCleared
+
+  - name: on_game_over
+    match:
+      topic: game.over
+    do: hud.rules.js#onGameOver

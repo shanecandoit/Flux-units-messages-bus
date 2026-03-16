@@ -1,0 +1,65 @@
+name: piece
+
+channels:
+  - game.tick
+  - input.piece.move
+  - input.piece.rotate
+  - input.piece.drop
+  - piece.spawned
+
+# Board: 10 cols × 20 rows.  Origin (0,0) = top-left.
+# Piece spawns at the top centre.  Gravity: one row per tick.
+# A piece is represented as its origin (x, y) + type + rotation.
+# The four cell offsets for each (type, rotation) are encoded in piece.rules.js.
+state:
+
+  active:
+    type:     u32 not null default 0   # 0=I 1=O 2=T 3=S 4=Z 5=J 6=L
+    rotation: u32 not null default 0   # 0–3
+    x:        u32 not null default 3   # board column (0-based)
+    y:        u32 not null default 0   # board row
+
+  # Shadow of the board's filled cells — used for collision detection.
+  # Updated when piece.locked fires (the board unit also updates its own copy).
+  board_shadow:
+    col: u32 not null
+    row: u32 not null
+    index: col
+
+rules:
+
+  # On tick: apply gravity (move down 1 row).  Lock if blocked.
+  - name: gravity
+    match:
+      topic: game.tick
+    do: piece.rules.js#applyGravity
+
+  # Player shifts the piece left or right (or nudges down)
+  - name: shift
+    match:
+      topic:     input.piece.move
+      direction: $direction
+    do: piece.rules.js#shiftPiece
+
+  # Player rotates the piece CW or CCW
+  - name: rotate
+    match:
+      topic:     input.piece.rotate
+      direction: $direction
+    do: piece.rules.js#rotatePiece
+
+  # Hard drop — move piece down until it locks
+  - name: hard_drop
+    match:
+      topic: input.piece.drop
+    do: piece.rules.js#hardDrop
+
+  # Spawn a new piece after a lock event
+  - name: spawn
+    match:
+      topic:    piece.spawned
+      type:     $type
+      rotation: $rotation
+      x:        $x
+      y:        $y
+    do: piece.rules.js#spawnPiece

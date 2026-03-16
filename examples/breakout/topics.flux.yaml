@@ -1,0 +1,63 @@
+topics:
+
+  # One per frame — injected by the host or tests
+  game.tick:
+    payload:
+      frame: u32 not null
+    cascade_budget: 15
+
+  # Move the paddle left or right
+  input.paddle.move:
+    payload:
+      direction: string(5) not null   # "left" or "right"
+
+  # Broadcast by the paddle unit each tick so the ball can cache its x position
+  paddle.moved:
+    payload:
+      x: f32 not null
+
+  # Ball hit a surface
+  ball.bounced:
+    payload:
+      surface: string(12) not null    # left_wall | right_wall | top_wall | paddle | brick
+      x:       f32        not null
+      y:       f32        not null
+
+  # Ball entered a brick's bounding box — may or may not be alive
+  ball.hit_brick:
+    payload:
+      col: u32 not null
+      row: u32 not null
+      x:   f32 not null
+      y:   f32 not null
+    cascade_budget: 3
+
+  # Brick unit confirmed the brick was alive and destroyed it
+  brick.destroyed:
+    payload:
+      col:    u32 not null
+      row:    u32 not null
+      points: u32 not null      # row 0 = 50 pts, row 1 = 40, …, row 4 = 10
+
+  # Ball exited the bottom of the screen — one life lost
+  ball.lost:
+    payload:
+      x: f32 not null
+      y: f32 not null
+    cascade_budget: 3
+
+  # Emitted by hud when score or lives change
+  score.updated:
+    payload:
+      score: u32 not null
+      lives: u32 not null
+
+  # All bricks cleared — advance level (or victory)
+  level.cleared:
+    payload:
+      score: u32 not null
+
+  # Lives exhausted
+  game.over:
+    payload:
+      score: u32 not null

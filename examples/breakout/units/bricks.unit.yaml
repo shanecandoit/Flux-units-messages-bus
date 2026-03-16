@@ -1,0 +1,23 @@
+name: bricks
+
+channels:
+  - ball.hit_brick
+
+# 8 × 5 grid — populated by the first game.tick or by scenario setup.
+# Key is row*8 + col.  Points: row 0 = 50, row 1 = 40, …, row 4 = 10.
+state:
+
+  alive:
+    key:    u32 not null
+    col:    u32 not null
+    row:    u32 not null
+    index:  key
+
+rules:
+
+  - name: destroy_brick
+    match:
+      topic: ball.hit_brick
+      col:   $col
+      row:   $row
+    do: bricks.rules.js#destroyBrick

@@ -1,0 +1,63 @@
+name: Place I-piece and spawn next
+description: |
+  An I-piece (type=0) in horizontal orientation (rotation=0) is hard-dropped
+  at x=3, y=18 (bottom of the board).  Verifies:
+  - piece.locked fires
+  - board gains 4 cells in row 18
+  - bag spawns the next piece (type=1, the O-piece)
+
+steps:
+
+  - description: Gravity tick — I-piece at spawn position moves down
+    inject:
+      topic: game.tick
+      frame: 1
+    expect:
+      - field: piece.active.y
+        op: equals
+        value: 1   # moved from row 0 to row 1
+
+  - description: Shift piece right twice to centre it
+    inject:
+      topic: input.piece.move
+      direction: right
+    expect:
+      - field: piece.active.x
+        op: equals
+        value: 4
+
+  - description: Shift right again
+    inject:
+      topic: input.piece.move
+      direction: right
+    expect:
+      - field: piece.active.x
+        op: equals
+        value: 5
+
+  - description: Hard drop — piece falls to bottom and locks
+    inject:
+      topic: input.piece.drop
+    expect_message:
+      - topic: piece.locked
+        field: type
+        op: equals
+        value: 0
+    expect_message:
+      - topic: piece.spawned
+        field: type
+        op: equals
+        value: 1   # O-piece is next in the bag cycle
+
+  - description: After lock the board has cells at row 18 (bottom area)
+    inject:
+      topic: game.tick
+      frame: 2
+    expect:
+      # New active piece is now the O-piece (type=1) at spawn position
+      - field: piece.active.type
+        op: equals
+        value: 1
+      - field: piece.active.y
+        op: equals
+        value: 1   # moved down one on this tick

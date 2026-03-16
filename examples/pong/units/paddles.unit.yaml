@@ -1,0 +1,30 @@
+name: paddles
+
+channels:
+  - game.tick
+  - input.paddle.move
+
+# Paddle y is clamped to [PH, H-PH] = [20, 220] so the paddle
+# never leaves the screen.  Paddle speed: 4 px per tick.
+state:
+
+  players:
+    player: string(8) not null
+    y:      f32       not null default 120
+    index:  player
+
+rules:
+
+  # Move a paddle in response to player input
+  - name: move_paddle
+    match:
+      topic:     input.paddle.move
+      player:    $player
+      direction: $direction
+    do: paddles.rules.js#movePaddle
+
+  # Broadcast current paddle positions each tick so the ball can cache them
+  - name: broadcast_positions
+    match:
+      topic: game.tick
+    do: paddles.rules.js#broadcastPositions

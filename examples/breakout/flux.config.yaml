@@ -1,0 +1,23 @@
+project: breakout
+version: 1
+
+runtime:
+  tick_limit: 10000
+  checkpoint_on: quiescence
+
+units:
+  dir: ./units
+
+topics:
+  file: ./topics.flux.yaml
+
+scenarios:
+  dir: ./scenarios
+
+checkpoints:
+  dir: ./checkpoints
+  keep_named: true
+
+studio:
+  port: 4000
+  open_on_dev: true

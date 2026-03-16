@@ -1,0 +1,47 @@
+topics:
+
+  # Injected once per frame by the host environment (or by tests)
+  game.tick:
+    payload:
+      frame: u32 not null
+    cascade_budget: 10
+
+  # Player input — direction is "up" or "down"
+  input.paddle.move:
+    payload:
+      player:    string(8) not null   # "left" or "right"
+      direction: string(4) not null   # "up" or "down"
+
+  # Broadcast by the paddles unit each tick so the ball can cache positions
+  paddles.moved:
+    payload:
+      player: string(8) not null
+      y:      f32      not null
+
+  # Ball hit a wall or paddle surface
+  ball.bounced:
+    payload:
+      surface: string(16) not null   # top_wall | bottom_wall | left_paddle | right_paddle
+      x:       f32       not null
+      y:       f32       not null
+
+  # Ball exited the play field — the named player scores a point
+  ball.scored:
+    payload:
+      player: string(8) not null     # "left" or "right"
+      x:      f32       not null
+      y:      f32       not null
+    cascade_budget: 5
+
+  # Emitted by the score unit after each goal
+  score.updated:
+    payload:
+      left:  u32 not null
+      right: u32 not null
+
+  # Emitted when a player reaches WIN_SCORE (7)
+  game.over:
+    payload:
+      winner:      string(8) not null
+      score_left:  u32       not null
+      score_right: u32       not null

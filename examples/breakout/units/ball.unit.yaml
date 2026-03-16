@@ -1,0 +1,47 @@
+name: ball
+
+channels:
+  - game.tick
+  - paddle.moved
+  - ball.hit_brick
+
+# Screen: 320 x 240.  Ball radius: 5.
+# Brick grid: 8 cols × 5 rows, top-left at (8, 30).
+# Each brick: 36 wide × 16 tall.  Gap between bricks: 2 px.
+# Paddle: centre x cached, fixed y=220, width=60 (half=30), height=8.
+state:
+
+  pos:
+    x:  f32 not null default 160
+    y:  f32 not null default 180
+    vx: f32 not null default 3
+    vy: f32 not null default -3
+
+  # Single-row cache of the paddle's last broadcast x position
+  paddle_cache:
+    x: f32 not null default 160
+
+  # Bricks the ball has already destroyed — key = row*8 + col
+  dead_bricks:
+    key: u32 not null
+    index: key
+
+rules:
+
+  - name: cache_paddle
+    match:
+      topic: paddle.moved
+      x:     $x
+    do: ball.rules.js#cachePaddle
+
+  - name: mark_brick_dead
+    match:
+      topic: ball.hit_brick
+      col:   $col
+      row:   $row
+    do: ball.rules.js#markBrickDead
+
+  - name: move
+    match:
+      topic: game.tick
+    do: ball.rules.js#moveBall
