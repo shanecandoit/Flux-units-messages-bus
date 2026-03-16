@@ -1,0 +1,13 @@
+topics:
+  counter.increment:
+    payload:
+      amount: u32 not null
+    cascade_budget: 2
+
+  counter.reset:
+    payload: {}
+    cascade_budget: 2
+
+  counter.updated:
+    payload:
+      count: u32 not null

@@ -1,0 +1,41 @@
+name: cart
+
+channels:
+  - commerce.cart.*
+  - commerce.checkout.submit
+
+state:
+
+  items:
+    sku:   string(32) not null
+    qty:   u32        not null
+    price: f32        not null
+    index: sku
+    max_rows: 100
+
+  totals:
+    subtotal: f32        not null default 0
+    coupon:   string(16) null
+
+rules:
+
+  - name: add_item
+    match:
+      topic: commerce.cart.add
+      sku:   $sku
+      price: $price
+      qty:   $qty
+    guard: state.items.count() < 100
+    do: cart.rules.js#addItem
+
+  - name: apply_coupon
+    match:
+      topic: commerce.cart.coupon_applied
+      code: $code
+      pct:  $pct
+    do: cart.rules.js#applyCoupon
+
+  - name: checkout
+    match:
+      topic: commerce.checkout.submit
+    do: cart.rules.js#checkout

@@ -47,7 +47,7 @@ function cartState() {
   const s = rt.state('cart')
   return {
     items: s.items.all(),
-    totals: s.totals._rows[0],
+    totals: s.totals.get(),
   }
 }
 
