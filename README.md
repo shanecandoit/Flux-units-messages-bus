@@ -592,28 +592,41 @@ flux <command> [options]
 
 ### Commands
 
+**Implemented**
+
+```
+flux run [dir]               Load units and start the HTTP runtime (default :4001)
+flux inject <topic> [json]   Inject a message into a running runtime
+flux check [dir]             Validate unit files and topic registry
+flux scenario [name]         Run scenarios (--dir=<path> to specify project)
+flux studio                  Serve the web Studio on :4000
+flux dev                     Start the studio (alias for flux studio)
+```
+
+**Planned** *(declared in the roadmap, not yet wired up)*
+
 ```
 flux new <name>              Create a new Flux project
-flux run                     Start the runtime, load all units
 flux run --watch             Restart on file changes
-flux inject <topic> [json]   Inject a message into a running runtime
-flux check                   Validate unit files, topic registry, JS subset rules
-flux scenario [name]         Run scenarios
 flux publish                 Run all scenarios, block if any fail, emit build artifact
 flux checkpoint save [name]  Save current state as a named checkpoint
 flux checkpoint restore <id> Restore runtime to a saved checkpoint
 flux diff <id1> <id2>        Show state and bus differences between two checkpoints
 flux replay <checkpoint>     Replay bus log from a checkpoint
 flux fix <defect-id>         Replay from defect's before-state, check want-state
-flux studio                  Start the web Studio on localhost:4000
-flux dev                     Run + watch + studio in one command
+```
+
+**Options**
+
+```
+--port=N   Override the default port (applies to run, inject, studio)
 ```
 
 ### Examples
 
 ```bash
-# start dev mode — runtime + studio, both watching for file changes
-flux dev
+# start the runtime on a specific port
+flux run ./examples/ecommerce --port=4001
 
 # inject a test message
 flux inject commerce.cart.add '{"sku":"widget-blue","price":9.99,"qty":1}'
@@ -624,14 +637,8 @@ flux check
 # run all scenarios and show a pass/fail summary
 flux scenario
 
-# fix a specific defect — replays from its before-state
-flux fix defect-007
-
-# diff the last two checkpoints
-flux diff HEAD HEAD~1
-
-# publish — runs all scenarios, blocks on failure
-flux publish
+# start the Studio UI
+flux studio
 ```
 
 ---
@@ -1012,11 +1019,13 @@ The project is in active development. Phases are independently shippable.
 
 Contributions are welcome. The project is most in need of:
 
-- **Unit test coverage** for the core runtime (bus, dispatcher, tick loop, Merkle checkpoint)
+- **Studio frontend** — the BA Scenario Builder and Dev Rule Editor views (Phase 5 & 6, React / TypeScript)
+- **Planned CLI commands** — `flux new`, `--watch`, `flux publish`, `flux checkpoint`, `flux diff`, `flux replay`, `flux fix`
 - **Examples** — new domains beyond e-commerce and games
-- **Studio frontend** — the BA and Dev views (React, TypeScript)
 - **Compiler work** — the Flux IR design is documented in [`docs/compiler.md`](docs/compiler.md)
 - **Bug reports** — the defect format is in [`docs/defects.md`](docs/defects.md); filing a bug as a Flux scenario is appreciated but not required
+
+The core runtime (bus, dispatcher, tick loop, Merkle checkpoints, scenario runner, CLI) has 139 tests at ≥95% line coverage.
 
 ### Development setup
 
