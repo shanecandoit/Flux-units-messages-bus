@@ -1,0 +1,45 @@
+name: Basic counter
+
+steps:
+
+  - description: Increment by 5
+    inject:
+      topic: counter.increment
+      amount: 5
+    expect:
+      - field: counter.totals.count
+        op: equals
+        value: 5
+    expect_message:
+      - topic: counter.updated
+        field: count
+        op: equals
+        value: 5
+
+  - description: Increment by 3 more
+    inject:
+      topic: counter.increment
+      amount: 3
+    expect:
+      - field: counter.totals.count
+        op: equals
+        value: 8
+      - field: counter.totals.count
+        op: greater_than
+        value: 5
+    must_not:
+      - field: counter.totals.count
+        op: equals
+        value: 3
+
+  - description: Reset counter
+    inject:
+      topic: counter.reset
+    expect:
+      - field: counter.totals.count
+        op: equals
+        value: 0
+    must_not:
+      - field: counter.totals.count
+        op: greater_than
+        value: 0

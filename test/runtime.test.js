@@ -432,3 +432,49 @@ describe('State table helpers', () => {
     assert.equal(unit.state.rows.count(), 1)
   })
 })
+
+// ── UnitInstance — _matchRule edge cases ──────────────────────────────────
+
+describe('UnitInstance — _matchRule edge cases', () => {
+  it('returns null when a literal pattern field is absent from payload', () => {
+    const unit = new UnitInstance({
+      name: 'x',
+      channels: ['x.*'],
+      initialState: {},
+      rules: [{
+        name: 'r',
+        // requires status: 'active' but payload won't include it
+        match: { topic: 'x.foo', status: 'active' },
+        do() {},
+      }],
+    })
+    // payload has no 'status' key → msgVal is undefined → undefined !== 'active' → null
+    const fired = unit.handleMessage({ topic: 'x.foo', payload: {} }, () => {})
+    assert.equal(fired, false)
+  })
+
+  it('binds undefined when a variable pattern field is absent from payload', () => {
+    let captured
+    const unit = new UnitInstance({
+      name: 'x',
+      channels: ['x.*'],
+      initialState: {},
+      rules: [{
+        name: 'r',
+        match: { topic: 'x.foo', val: '$v' },
+        do(state, b) { captured = b['$v'] },
+      }],
+    })
+    unit.handleMessage({ topic: 'x.foo', payload: {} }, () => {})
+    assert.equal(captured, undefined)
+  })
+
+  it('throws when duplicate unit name registered', () => {
+    const rt = new Runtime()
+    rt.addUnit(new UnitInstance({ name: 'dup', channels: [], initialState: {}, rules: [] }))
+    assert.throws(
+      () => rt.addUnit(new UnitInstance({ name: 'dup', channels: [], initialState: {}, rules: [] })),
+      /already registered/,
+    )
+  })
+})

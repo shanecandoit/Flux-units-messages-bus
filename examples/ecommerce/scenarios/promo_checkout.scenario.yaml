@@ -1,0 +1,55 @@
+name: Promo code — 10% off
+description: |
+  Loyalty member applies SAVE10 to a cart with one item.
+  Total should reflect 10% discount before checkout.
+
+steps:
+
+  - description: Customer adds blue widget
+    inject:
+      topic: commerce.cart.add
+      sku: widget-blue
+      price: 9.99
+      qty: 1
+    expect:
+      - field: cart.totals.subtotal
+        op: equals
+        value: 9.99
+    expect_message:
+      - topic: commerce.cart.updated
+        field: total
+        op: equals
+        value: 9.99
+
+  - description: Customer applies SAVE10 coupon
+    inject:
+      topic: commerce.cart.coupon_applied
+      code: SAVE10
+      pct: 10
+    expect:
+      - field: cart.totals.subtotal
+        op: less_than
+        value: 9.99
+      - field: cart.totals.coupon
+        op: equals
+        value: SAVE10
+    must_not:
+      - field: cart.totals.subtotal
+        op: equals
+        value: 9.99
+
+  - description: Customer checks out
+    inject:
+      topic: commerce.checkout.submit
+      cart_id: cart_001
+    expect:
+      - field: cart.totals.subtotal
+        op: equals
+        value: 0
+      - field: cart.totals.coupon
+        op: not_exists
+    expect_message:
+      - topic: commerce.checkout.complete
+        field: total
+        op: greater_than
+        value: 0

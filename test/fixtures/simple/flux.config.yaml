@@ -1,0 +1,11 @@
+project: simple
+version: 1
+
+units:
+  dir: ./units
+
+topics:
+  file: ./topics.flux.yaml
+
+scenarios:
+  dir: ./scenarios

@@ -1,0 +1,21 @@
+name: counter
+
+channels:
+  - counter.*
+
+state:
+  totals:
+    count: u32 not null default 0
+
+rules:
+  - name: increment
+    match:
+      topic: counter.increment
+      amount: $amount
+    guard: state.totals.get().count < 1000
+    do: counter.rules.js#increment
+
+  - name: reset
+    match:
+      topic: counter.reset
+    do: counter.rules.js#reset
