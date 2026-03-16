@@ -200,11 +200,34 @@ export function checkProject(unitConfigs, topics) {
   const warnings = []
   const topicNames = new Set(Object.keys(topics))
 
+  // Check for duplicate unit names
+  const seenUnitNames = new Set()
   for (const cfg of unitConfigs) {
+    if (!cfg.name) {
+      errors.push(`A unit is missing a 'name' field`)
+      continue
+    }
+    if (seenUnitNames.has(cfg.name)) {
+      errors.push(`Duplicate unit name: '${cfg.name}'`)
+    }
+    seenUnitNames.add(cfg.name)
+  }
+
+  for (const cfg of unitConfigs) {
+    if (!cfg.name) continue  // already reported above
+
+    const seenRuleNames = new Set()
     for (const rule of cfg.rules) {
+      if (!rule.name) {
+        warnings.push(`[${cfg.name}] A rule is missing a 'name' field`)
+      } else if (seenRuleNames.has(rule.name)) {
+        warnings.push(`[${cfg.name}] Duplicate rule name: '${rule.name}'`)
+      }
+      if (rule.name) seenRuleNames.add(rule.name)
+
       const ruleTopic = rule.match?.topic
       if (!ruleTopic) {
-        errors.push(`[${cfg.name}] Rule '${rule.name}' has no topic in match pattern`)
+        errors.push(`[${cfg.name}] Rule '${rule.name ?? '(unnamed)'}' has no topic in match pattern`)
         continue
       }
       // Wildcard patterns can't be validated against the registry
