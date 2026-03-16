@@ -16,7 +16,6 @@ scenarios:
 
 checkpoints:
   dir: ./checkpoints
-  keep_named: true
 
 studio:
   port: 4000
