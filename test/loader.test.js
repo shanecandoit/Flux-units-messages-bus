@@ -1,7 +1,9 @@
-import { describe, it } from 'node:test'
+import { describe, it, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import {
   loadProject,
   loadUnitConfig,
@@ -9,6 +11,22 @@ import {
   createRuntime,
   checkProject,
 } from '../src/loader.js'
+
+// ── temp-unit helper ──────────────────────────────────────────────────────────
+
+const tmpDirs = []
+
+function tempUnit(yaml, rulesJs = null) {
+  const dir = mkdtempSync(join(tmpdir(), 'flux-loader-test-'))
+  tmpDirs.push(dir)
+  writeFileSync(join(dir, 'unit.unit.yaml'), yaml)
+  if (rulesJs !== null) writeFileSync(join(dir, 'unit.rules.js'), rulesJs)
+  return join(dir, 'unit.unit.yaml')
+}
+
+after(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true })
+})
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FIXTURE = join(__dirname, 'fixtures', 'simple')
@@ -190,5 +208,84 @@ describe('checkProject', () => {
     }]
     const { warnings } = checkProject(cfg, {})
     assert.equal(warnings.length, 0)
+  })
+})
+
+// ── loadUnitConfig — error paths ──────────────────────────────────────────────
+
+describe('loadUnitConfig — error paths', () => {
+  it('throws when a rule is missing its do field', async () => {
+    const path = tempUnit(`
+name: bad
+channels: []
+rules:
+  - name: broken
+    match: { topic: foo.bar }
+`)
+    await assert.rejects(
+      () => loadUnitConfig(path),
+      /missing 'do' field/,
+    )
+  })
+
+  it('throws when do field has no # separator', async () => {
+    const path = tempUnit(`
+name: bad
+channels: []
+rules:
+  - name: broken
+    match: { topic: foo.bar }
+    do: norule
+`)
+    await assert.rejects(
+      () => loadUnitConfig(path),
+      /file\.js#functionName/,
+    )
+  })
+
+  it('throws when the rules file does not exist', async () => {
+    const path = tempUnit(`
+name: bad
+channels: []
+rules:
+  - name: broken
+    match: { topic: foo.bar }
+    do: nonexistent.rules.js#fn
+`)
+    await assert.rejects(
+      () => loadUnitConfig(path),
+      /not found/,
+    )
+  })
+
+  it('throws when the named function is not exported', async () => {
+    const path = tempUnit(`
+name: bad
+channels: []
+rules:
+  - name: broken
+    match: { topic: foo.bar }
+    do: unit.rules.js#missingFn
+`, `export function otherFn() {}`)
+    await assert.rejects(
+      () => loadUnitConfig(path),
+      /missingFn.*not found/,
+    )
+  })
+
+  it('throws when guard is not a string', async () => {
+    const path = tempUnit(`
+name: bad
+channels: []
+rules:
+  - name: broken
+    match: { topic: foo.bar }
+    guard: true
+    do: unit.rules.js#fn
+`, `export function fn() {}`)
+    await assert.rejects(
+      () => loadUnitConfig(path),
+      /guard must be a JS expression string/,
+    )
   })
 })

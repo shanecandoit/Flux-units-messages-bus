@@ -275,6 +275,52 @@ describe('runScenario — contains operator', () => {
     const result = await runScenario(sc, [cfg])
     assert.equal(result.passed, false)
   })
+
+  it('contains passes for substring of a string field', async () => {
+    // Build a unit with a string-typed record field
+    const labelCfg = {
+      name: 'lbl',
+      channels: ['lbl.*'],
+      stateDecl: { meta: { text: 'string(64) not null default ""' } },
+      rules: [{
+        name: 'set',
+        match: { topic: 'lbl.set', text: '$text' },
+        guard: null,
+        do(state, b) { state.meta.get().text = b['$text'] },
+        matchAll: false,
+      }],
+    }
+    const sc = {
+      name: 'string-contains',
+      steps: [{
+        description: 'substring match',
+        inject: { topic: 'lbl.set', payload: { text: 'hello world' } },
+        expect: [{ field: 'lbl.meta.text', op: 'contains', value: 'world' }],
+        mustNot: [{ field: 'lbl.meta.text', op: 'contains', value: 'xyz' }],
+        expectMessage: [],
+      }],
+    }
+    const result = await runScenario(sc, [labelCfg])
+    assert.equal(result.passed, true, formatResults([result]))
+  })
+
+  it('contains fails with a clear message on a non-array non-string value', async () => {
+    const { unitConfigs } = await loadProject(FIXTURE)
+    const sc = {
+      name: 'bad-contains',
+      steps: [{
+        description: 'contains on a number',
+        inject: { topic: 'counter.increment', payload: { amount: 5 } },
+        // count is a number — 'contains' is inapplicable
+        expect: [{ field: 'counter.totals.count', op: 'contains', value: 5 }],
+        mustNot: [],
+        expectMessage: [],
+      }],
+    }
+    const result = await runScenario(sc, unitConfigs)
+    assert.equal(result.passed, false)
+    assert.ok(result.steps[0].failures[0].includes('cannot use'))
+  })
 })
 
 describe('runScenario — state isolation between runs', () => {

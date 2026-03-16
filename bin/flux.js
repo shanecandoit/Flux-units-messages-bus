@@ -3,7 +3,7 @@
  * Flux CLI
  */
 import { createServer } from 'node:http'
-import { createReadStream, existsSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
 import { join, extname, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
