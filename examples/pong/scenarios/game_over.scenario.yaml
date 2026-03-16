@@ -1,0 +1,92 @@
+name: Game over at win score
+description: |
+  Verifies that game.over fires when a player reaches 7 points, and that
+  it carries the correct winner and final scores.
+
+steps:
+
+  - description: Goals 1–6 for left (one step each to keep the log clean)
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 1
+
+  - description: Goal 2
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 2
+
+  - description: Goal 3
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 3
+
+  - description: Goal 4
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 4
+
+  - description: Goal 5
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 5
+
+  - description: Goal 6
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 6
+
+  - description: Goal 7 — left player wins, game.over fires
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 7
+    must_not:
+      - field: score.totals.left
+        op: less_than
+        value: 7
+    expect_message:
+      - topic: game.over
+        field: winner
+        op: equals
+        value: left

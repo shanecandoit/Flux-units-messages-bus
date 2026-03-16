@@ -1,0 +1,26 @@
+name: paddle
+
+channels:
+  - game.tick
+  - input.paddle.move
+
+# Screen width: 320.  Paddle width: 60 (half=30).
+# Paddle y is fixed at 220.  Speed: 5 px per tick.
+# x clamped to [30, 290] so the paddle stays on screen.
+state:
+
+  pos:
+    x: f32 not null default 160
+
+rules:
+
+  - name: move
+    match:
+      topic:     input.paddle.move
+      direction: $direction
+    do: paddle.rules.js#movePaddle
+
+  - name: broadcast
+    match:
+      topic: game.tick
+    do: paddle.rules.js#broadcastPaddle

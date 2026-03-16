@@ -1,0 +1,54 @@
+topics:
+
+  # One per gravity step (not per render frame — gravity is slower than 60fps)
+  game.tick:
+    payload:
+      frame: u32 not null
+    cascade_budget: 20
+
+  # Player input for the active piece
+  input.piece.move:
+    payload:
+      direction: string(5) not null   # "left", "right", or "down"
+
+  input.piece.rotate:
+    payload:
+      direction: string(3) not null   # "cw" or "ccw"
+
+  input.piece.drop:
+    payload: {}                        # hard drop — piece falls instantly
+
+  # Piece reached the bottom and is locked into the board
+  piece.locked:
+    payload:
+      type:     u32 not null           # 0=I 1=O 2=T 3=S 4=Z 5=J 6=L
+      rotation: u32 not null           # 0–3
+      x:        u32 not null           # board column of piece origin
+      y:        u32 not null           # board row of piece origin
+    cascade_budget: 15
+
+  # Bag unit spawns the next piece after a lock
+  piece.spawned:
+    payload:
+      type:     u32 not null
+      rotation: u32 not null
+      x:        u32 not null
+      y:        u32 not null
+
+  # Board cleared one or more complete rows
+  lines.cleared:
+    payload:
+      count:  u32 not null             # 1–4
+      score:  u32 not null             # points for this clear
+
+  # Score / level / lines display
+  score.updated:
+    payload:
+      score:  u32 not null
+      level:  u32 not null
+      lines:  u32 not null
+
+  # Top row of the board is occupied after locking — game ends
+  game.over:
+    payload:
+      score: u32 not null

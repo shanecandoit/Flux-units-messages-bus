@@ -1,0 +1,31 @@
+name: hud
+
+channels:
+  - brick.destroyed
+  - ball.lost
+  - level.cleared
+
+state:
+
+  stats:
+    score: u32 not null default 0
+    lives: u32 not null default 3
+    level: u32 not null default 1
+
+rules:
+
+  - name: add_points
+    match:
+      topic:  brick.destroyed
+      points: $points
+    do: hud.rules.js#addPoints
+
+  - name: lose_life
+    match:
+      topic: ball.lost
+    do: hud.rules.js#loseLife
+
+  - name: next_level
+    match:
+      topic: level.cleared
+    do: hud.rules.js#nextLevel

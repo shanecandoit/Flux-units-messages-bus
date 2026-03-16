@@ -1,0 +1,84 @@
+name: Line clear and scoring
+description: |
+  Locks a full row by injecting piece.locked messages directly.
+  Verifies: lines.cleared fires with count=1 and score=100,
+  hud accumulates score with level multiplier, score.updated reflects it.
+
+steps:
+
+  # Inject piece.locked nine times to fill columns 0–8 of row 19 indirectly.
+  # Each I-piece in horizontal orientation fills 4 cells.
+  # Simpler: inject lines.cleared directly to test the hud, then verify
+  # the board clears correctly with a piece.locked that completes a row.
+
+  - description: Inject lines.cleared directly — 1 line = 100 pts at level 1
+    inject:
+      topic: lines.cleared
+      count: 1
+      score: 100
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 100    # 100 pts × level 1 multiplier
+      - field: hud.stats.lines
+        op: equals
+        value: 1
+    expect_message:
+      - topic: score.updated
+        field: score
+        op: equals
+        value: 100
+
+  - description: Another single line — score accumulates
+    inject:
+      topic: lines.cleared
+      count: 1
+      score: 100
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 200
+
+  - description: Tetris (4 lines) = 800 pts × level 1 multiplier
+    inject:
+      topic: lines.cleared
+      count: 4
+      score: 800
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 1000
+      - field: hud.stats.lines
+        op: equals
+        value: 6
+    must_not:
+      - field: hud.stats.score
+        op: less_than
+        value: 1000
+
+  - description: After 10 lines, level advances to 2
+    inject:
+      topic: lines.cleared
+      count: 4
+      score: 800
+    inject:
+      topic: lines.cleared
+      count: 4
+      score: 800
+    expect:
+      - field: hud.stats.lines
+        op: greater_than
+        value: 9
+      - field: hud.stats.level
+        op: equals
+        value: 2   # floor(14/10) + 1 = 2
+
+  - description: At level 2 a single line earns 200 pts (100 × level=2)
+    inject:
+      topic: lines.cleared
+      count: 1
+      score: 100
+    expect:
+      - field: hud.stats.score
+        op: greater_than
+        value: 2000

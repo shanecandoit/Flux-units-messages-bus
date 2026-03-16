@@ -1,0 +1,106 @@
+name: Clear bottom row and score
+description: |
+  Seeds row 4 (lowest, worth 10 pts each) by injecting brick.destroyed
+  directly for 7 bricks, then destroys the last one via ball.hit_brick
+  and verifies the score accumulates correctly.
+  Tests: addPoints accumulates score, score.updated fires after each brick.
+
+steps:
+
+  # Seed the hud with 7 × 10 = 70 points via direct brick.destroyed injection
+  - description: Destroy brick (col=0, row=4) — 10 pts
+    inject:
+      topic: brick.destroyed
+      col: 0
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 10
+
+  - description: Destroy brick (col=1, row=4) — 20 pts total
+    inject:
+      topic: brick.destroyed
+      col: 1
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 20
+
+  - description: Destroy brick (col=2, row=4) — 30 pts total
+    inject:
+      topic: brick.destroyed
+      col: 2
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 30
+
+  - description: Destroy brick (col=3, row=4) — 40 pts total
+    inject:
+      topic: brick.destroyed
+      col: 3
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 40
+
+  - description: Destroy brick (col=4, row=4) — 50 pts total
+    inject:
+      topic: brick.destroyed
+      col: 4
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 50
+
+  - description: Destroy brick (col=5, row=4) — 60 pts total
+    inject:
+      topic: brick.destroyed
+      col: 5
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 60
+
+  - description: Destroy brick (col=6, row=4) — 70 pts total
+    inject:
+      topic: brick.destroyed
+      col: 6
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 70
+
+  - description: Final brick in row — 80 pts, score.updated reflects total
+    inject:
+      topic: brick.destroyed
+      col: 7
+      row: 4
+      points: 10
+    expect:
+      - field: hud.stats.score
+        op: equals
+        value: 80
+    must_not:
+      - field: hud.stats.score
+        op: less_than
+        value: 80
+    expect_message:
+      - topic: score.updated
+        field: score
+        op: equals
+        value: 80

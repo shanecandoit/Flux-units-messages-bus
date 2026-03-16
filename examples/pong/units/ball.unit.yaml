@@ -1,0 +1,39 @@
+name: ball
+
+channels:
+  - game.tick
+  - paddles.moved
+
+# Screen: 320 x 240.  Ball radius: 5.
+# Left paddle centre x=12.  Right paddle centre x=308.
+# Paddle half-height: 20 px.
+state:
+
+  # Single-row record: current ball position and velocity
+  pos:
+    x:  f32 not null default 160
+    y:  f32 not null default 120
+    vx: f32 not null default 3
+    vy: f32 not null default 2
+
+  # Two-row table — caches last broadcast paddle y positions
+  paddle_cache:
+    player: string(8) not null
+    y:      f32       not null default 120
+    index:  player
+
+rules:
+
+  # Keep a local copy of each paddle's y so the ball can test collisions
+  - name: cache_paddle_pos
+    match:
+      topic:  paddles.moved
+      player: $player
+      y:      $y
+    do: ball.rules.js#cachePaddlePos
+
+  # Move the ball, test all collisions, re-centre after a goal
+  - name: move
+    match:
+      topic: game.tick
+    do: ball.rules.js#moveBall

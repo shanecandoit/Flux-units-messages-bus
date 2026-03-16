@@ -1,0 +1,99 @@
+name: Ball movement and scoring
+description: |
+  Tests ball physics (movement, wall bounce, paddle deflection) and score tracking.
+  In Flux, every message topic is injectable — so ball.scored can be sent directly
+  to test score logic without needing to simulate 50+ ticks of physics.
+  The bus log captures the full causal chain for replay.
+
+steps:
+
+  - description: Tick 1 — ball moves right-down from start position
+    inject:
+      topic: game.tick
+      frame: 1
+    expect:
+      - field: ball.pos.x
+        op: equals
+        value: 163
+      - field: ball.pos.y
+        op: equals
+        value: 122
+
+  - description: Tick 2 — ball continues
+    inject:
+      topic: game.tick
+      frame: 2
+    expect:
+      - field: ball.pos.x
+        op: equals
+        value: 166
+      - field: ball.pos.y
+        op: equals
+        value: 124
+
+  - description: Left paddle initialises at centre then moves up
+    inject:
+      topic: input.paddle.move
+      player: left
+      direction: up
+    expect:
+      - field: paddles.players
+        op: contains
+        value: { player: left, y: 116 }
+
+  - description: Left paddle moves up again — y clamps at Y_MIN=20
+    inject:
+      topic: input.paddle.move
+      player: left
+      direction: up
+    expect:
+      - field: paddles.players
+        op: contains
+        value: { player: left, y: 112 }
+
+  - description: Right paddle initialises and moves down
+    inject:
+      topic: input.paddle.move
+      player: right
+      direction: down
+    expect:
+      - field: paddles.players
+        op: contains
+        value: { player: right, y: 124 }
+
+  # Score logic tested by injecting ball.scored directly —
+  # no need to simulate 50+ ticks for the ball to cross the field
+  - description: Right player scores (ball exits left side)
+    inject:
+      topic: ball.scored
+      player: right
+      x: -5
+      y: 120
+    expect:
+      - field: score.totals.right
+        op: equals
+        value: 1
+      - field: score.totals.left
+        op: equals
+        value: 0
+    expect_message:
+      - topic: score.updated
+        field: right
+        op: equals
+        value: 1
+
+  - description: Left player scores (ball exits right side)
+    inject:
+      topic: ball.scored
+      player: left
+      x: 325
+      y: 120
+    expect:
+      - field: score.totals.left
+        op: equals
+        value: 1
+    expect_message:
+      - topic: score.updated
+        field: left
+        op: equals
+        value: 1

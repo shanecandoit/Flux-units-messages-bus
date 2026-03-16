@@ -1,0 +1,24 @@
+name: board
+
+channels:
+  - piece.locked
+
+# 10 × 20 grid of filled cells.
+# After locking, complete rows are cleared and higher rows drop down.
+state:
+
+  cells:
+    col: u32 not null
+    row: u32 not null
+    index: col
+
+rules:
+
+  - name: lock_piece
+    match:
+      topic:    piece.locked
+      type:     $type
+      rotation: $rotation
+      x:        $x
+      y:        $y
+    do: board.rules.js#lockPiece
