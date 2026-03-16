@@ -72,6 +72,18 @@ export class Runtime {
     return this._units.get(unitName)?.state ?? null
   }
 
+  /**
+   * Restore the runtime to a previously saved checkpoint.
+   * Replaces all unit states and the bus log; any in-flight messages are discarded.
+   */
+  restore(cp) {
+    for (const [name, unitState] of Object.entries(cp.units)) {
+      const unit = this._units.get(name)
+      if (unit) unit.restoreState(unitState)
+    }
+    this.bus.restore(cp.bus_log, cp.tick)
+  }
+
   /** Snapshot all unit states (shallow clone). */
   snapshot() {
     const units = {}
@@ -192,5 +204,15 @@ export class UnitInstance {
       snap[key] = table._rows.map(r => ({ ...r }))
     }
     return snap
+  }
+
+  /** Restore this unit's state tables from a snapshot (array of rows per table key). */
+  restoreState(snap) {
+    for (const [key, table] of Object.entries(this.state)) {
+      table.clear()
+      for (const row of (snap[key] ?? [])) {
+        table.insert({ ...row })
+      }
+    }
   }
 }
