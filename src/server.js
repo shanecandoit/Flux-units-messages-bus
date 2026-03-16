@@ -210,7 +210,15 @@ export function createRuntimeServer(rt, { unitConfigs, cpDir, scenariosDir }) {
         const results = await runAllScenarios(scenarios, unitConfigs)
         json(res, 200, {
           ok:      results.every(r => r.passed),
-          results: results.map(r => ({ name: r.name, passed: r.passed, failReason: r.failReason ?? null })),
+          results: results.map(r => ({
+            name:   r.name,
+            passed: r.passed,
+            steps:  r.steps.map(s => ({
+              description: s.description,
+              passed:      s.passed,
+              failures:    s.failures ?? [],
+            })),
+          })),
         })
       } catch (e) { json(res, 500, { error: e.message }) }
       return
