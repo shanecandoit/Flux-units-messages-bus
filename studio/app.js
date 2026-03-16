@@ -56,6 +56,7 @@ function newStep() {
     verdict: null,    // null | 'good' | 'bad'
     wantState: '',
     badNote: '',
+    runResult: null,  // null | { passed, failures: string[] }
   }
 }
 
@@ -259,6 +260,8 @@ function renderMain() {
     <div class="main-toolbar">
       <input class="scenario-name-input" id="scenario-name" value="${escAttr(sc.name)}"
         placeholder="Scenario name…" oninput="updateScenarioName(this.value)">
+      <button class="btn btn-run" onclick="runScenario()" title="Run against runtime">▶ Run</button>
+      <button class="btn btn-secondary" onclick="saveScenarioToDisk()" title="Save to scenarios/ on disk">Save</button>
       <button class="btn btn-secondary" onclick="exportYaml()">Export YAML</button>
       <button class="btn btn-danger btn-icon" onclick="deleteScenario()" title="Delete scenario">✕</button>
     </div>
@@ -296,7 +299,16 @@ function renderStep(step, idx) {
     payloadError = `<div class="payload-error">⚠ ${escHtml(e.message)}</div>`
   }
 
-  const statusIcon = step.verdict === 'good' ? '✅' : step.verdict === 'bad' ? '❌' : '○'
+  const runIcon = step.runResult === null ? '' : step.runResult.passed ? ' 🟢' : ' 🔴'
+  const statusIcon = (step.verdict === 'good' ? '✅' : step.verdict === 'bad' ? '❌' : '○') + runIcon
+
+  const runResultHtml = step.runResult
+    ? `<div class="run-result ${step.runResult.passed ? 'run-pass' : 'run-fail'}">
+         ${step.runResult.passed
+           ? '✓ Passed'
+           : step.runResult.failures.map(f => `<div class="run-failure">${escHtml(f)}</div>`).join('')}
+       </div>`
+    : ''
 
   return `
     <div class="step-card ${isOpen ? 'active' : ''}" id="step-${idx}">
@@ -369,6 +381,8 @@ function renderStep(step, idx) {
           <input type="text" value="${escAttr(step.badNote)}" placeholder="What went wrong?"
             oninput="updateStep(${idx},'badNote',this.value)">
         </div>
+
+        ${runResultHtml}
 
         <div style="display:flex;justify-content:flex-end;margin-top:12px">
           <button class="btn btn-danger" onclick="removeStep(${idx})">Remove step</button>
@@ -575,6 +589,131 @@ window.addCustomTopic = function() {
   }
 }
 
+// ── BA — run scenario against runtime ────────────────────────────────────────
+
+window.runScenario = async function() {
+  const sc = activeScenario()
+  if (!sc || sc.steps.length === 0) { showToast('No steps to run', 'error'); return }
+
+  showToast('Running…')
+  for (const step of sc.steps) step.runResult = null
+  renderMain()
+
+  for (let i = 0; i < sc.steps.length; i++) {
+    const step = sc.steps[i]
+    const { topic } = step.inject
+    if (!topic) { step.runResult = { passed: false, failures: ['No topic set'] }; continue }
+
+    let payload = {}
+    try { payload = JSON.parse(step.inject.payload || '{}') }
+    catch (e) { step.runResult = { passed: false, failures: [`Invalid JSON: ${e.message}`] }; continue }
+
+    try {
+      const ir = await fetch(`${BASE}/inject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, payload }),
+      })
+      if (!ir.ok) {
+        const err = await ir.json()
+        step.runResult = { passed: false, failures: [`Inject failed: ${err.error}`] }
+        continue
+      }
+    } catch (e) {
+      step.runResult = { passed: false, failures: [`Network error: ${e.message}`] }
+      continue
+    }
+
+    let currentState = {}
+    try {
+      const sr = await fetch(`${BASE}/state`)
+      currentState = await sr.json()
+    } catch (_) {}
+
+    const failures = checkExpectations(step.expect, step.mustNot, currentState)
+    step.runResult = { passed: failures.length === 0, failures }
+
+    // Re-render after each step so the user sees progress
+    renderMain()
+  }
+
+  const passed = sc.steps.every(s => s.runResult?.passed !== false)
+  showToast(passed ? '✓ All steps passed' : '✗ Some steps failed', passed ? 'success' : 'error')
+}
+
+function checkExpectations(expects, mustNots, stateObj) {
+  const failures = []
+  for (const exp of expects) {
+    if (!exp.field) continue
+    const actual = getFieldValue(stateObj, exp.field)
+    if (!evalOp(exp.op, actual, exp.value))
+      failures.push(`${exp.field} ${exp.op} ${exp.value} — got ${JSON.stringify(actual)}`)
+  }
+  for (const exp of mustNots) {
+    if (!exp.field) continue
+    const actual = getFieldValue(stateObj, exp.field)
+    if (evalOp(exp.op, actual, exp.value))
+      failures.push(`MUST NOT: ${exp.field} ${exp.op} ${exp.value} — but it passed`)
+  }
+  return failures
+}
+
+function getFieldValue(obj, path) {
+  let cur = obj
+  for (const part of path.split('.')) {
+    if (cur == null) return undefined
+    if (Array.isArray(cur)) cur = cur[0]  // record tables are single-element arrays
+    cur = cur[part]
+  }
+  return cur
+}
+
+function evalOp(op, actual, expected) {
+  const n = v => isNaN(v) ? v : Number(v)
+  switch (op) {
+    case 'equals':       return actual == n(expected)
+    case 'not_equals':   return actual != n(expected)
+    case 'greater_than': return Number(actual) > n(expected)
+    case 'less_than':    return Number(actual) < n(expected)
+    case 'contains':     return String(actual ?? '').includes(String(expected))
+    case 'exists':       return actual !== undefined && actual !== null
+    case 'not_exists':   return actual === undefined || actual === null
+    default:             return false
+  }
+}
+
+// ── BA — save / load from disk ────────────────────────────────────────────────
+
+window.saveScenarioToDisk = async function() {
+  const sc = activeScenario()
+  if (!sc) return
+  const content = scenarioToYaml(sc)
+  const filename = sc.name.replace(/[^a-z0-9]+/gi, '_').toLowerCase() + '.scenario.yaml'
+  try {
+    const res = await fetch(`${BASE}/scenarios`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    showToast(`Saved ${filename}`, 'success')
+  } catch (e) {
+    showToast(`Save failed: ${e.message}`, 'error')
+  }
+}
+
+async function loadTopicsFromRuntime() {
+  try {
+    const res = await fetch(`${BASE}/units`)
+    if (!res.ok) return
+    const units = await res.json()
+    const runtimeTopics = units.flatMap(u => u.channels).filter(c => !c.includes('*'))
+    for (const t of runtimeTopics) {
+      if (!state.topics.includes(t)) state.topics.push(t)
+    }
+  } catch (_) {}  // runtime not running — fall through silently
+}
+
 // ── Toast ──────────────────────────────────────────────────────────────────
 
 function showToast(msg, type = '') {
@@ -638,6 +777,7 @@ if (state.scenarios.length === 0) {
 }
 
 render()
+loadTopicsFromRuntime()
 
 // ── View switching ────────────────────────────────────────────────────────────
 

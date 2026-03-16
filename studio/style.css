@@ -457,6 +457,34 @@ textarea { resize: vertical; min-height: 64px; font-size: 12px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
+/* ── BA — Run button ─────────────────────────────────────────────────────── */
+
+.btn-run {
+  background: var(--green);
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-run:hover { opacity: 0.85; }
+
+/* ── BA — Step run results ───────────────────────────────────────────────── */
+
+.run-result {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.run-result.run-pass { background: rgba(76,175,125,0.12); color: var(--green); }
+.run-result.run-fail { background: rgba(224,92,92,0.12);  color: var(--red); }
+.run-failure { margin-top: 4px; }
+
 /* ── Full-panel views (QA + Dev) ─────────────────────────────────────────── */
 
 .full-panel {
