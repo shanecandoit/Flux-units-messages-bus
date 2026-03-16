@@ -3,7 +3,7 @@
  * Flux CLI
  */
 import { createServer } from 'node:http'
-import { createReadStream, existsSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { join, extname, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -70,12 +70,13 @@ const commands = {
     const dir = projectDir(positional)
     const port = Number(flags.port ?? RUNTIME_PORT)
 
-    const { loadProject, createRuntime } = await import('../src/loader.js')
+    const { loadProject, createRuntime, loadScenarioConfig } = await import('../src/loader.js')
     const { buildCheckpoint, saveCheckpoint, loadCheckpoint, listCheckpoints, restoreCheckpoint } =
       await import('../src/checkpoint.js')
+    const { runAllScenarios } = await import('../src/scenario-runner.js')
 
     console.log(`Loading project from ${dir}`)
-    const { unitConfigs, config } = await loadProject(dir)
+    const { unitConfigs, scenariosDir, config } = await loadProject(dir)
 
     if (unitConfigs.length === 0) {
       console.error('No unit files found. Create *.unit.yaml files in the units/ directory.')
@@ -181,6 +182,107 @@ const commands = {
         } catch (e) {
           json(res, 404, { error: e.message })
         }
+        return
+      }
+
+      // ── GET /units ────────────────────────────────────────────────────────
+      if (req.method === 'GET' && req.url === '/units') {
+        json(res, 200, unitConfigs.map(u => ({
+          name:        u.name,
+          channels:    u.channels,
+          rules:       u.rules.map(r => r.name),
+          sourceFiles: u.sourceFiles,
+        })))
+        return
+      }
+
+      // ── GET|PUT /unit/:name/source ────────────────────────────────────────
+      const unitSourceMatch = req.url.match(/^\/unit\/([^/]+)\/source$/)
+      if (unitSourceMatch) {
+        const name = decodeURIComponent(unitSourceMatch[1])
+        const cfg = unitConfigs.find(u => u.name === name)
+        if (!cfg) { json(res, 404, { error: `Unit '${name}' not found` }); return }
+        if (cfg.sourceFiles.length === 0) { json(res, 404, { error: `Unit '${name}' has no source files` }); return }
+        const primarySource = cfg.sourceFiles[0]
+
+        if (req.method === 'GET') {
+          try {
+            const src = readFileSync(primarySource, 'utf8')
+            res.writeHead(200, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' })
+            res.end(src)
+          } catch (e) { json(res, 500, { error: e.message }) }
+          return
+        }
+
+        if (req.method === 'PUT') {
+          try {
+            const raw = await new Promise((ok, fail) => {
+              let s = ''; req.on('data', d => { s += d })
+              req.on('end', () => ok(s)); req.on('error', fail)
+            })
+            writeFileSync(primarySource, raw, 'utf8')
+            json(res, 200, { ok: true })
+          } catch (e) { json(res, 500, { error: e.message }) }
+          return
+        }
+      }
+
+      // ── GET /checkpoint/:id ───────────────────────────────────────────────
+      const cpMatch = req.url.match(/^\/checkpoint\/([^/]+)$/)
+      if (req.method === 'GET' && cpMatch && cpMatch[1] !== 'save' && cpMatch[1] !== 'restore') {
+        if (!cpDir) { json(res, 400, { error: 'No checkpoints.dir configured' }); return }
+        try {
+          const cp = await loadCheckpoint(decodeURIComponent(cpMatch[1]), cpDir)
+          json(res, 200, cp)
+        } catch (e) { json(res, 404, { error: e.message }) }
+        return
+      }
+
+      // ── GET /scenarios ────────────────────────────────────────────────────
+      if (req.method === 'GET' && req.url === '/scenarios') {
+        try {
+          const files = existsSync(scenariosDir)
+            ? readdirSync(scenariosDir).filter(f => f.endsWith('.scenario.yaml') || f.endsWith('.scenario.yml'))
+            : []
+          json(res, 200, files.map(f => {
+            try {
+              const sc = loadScenarioConfig(join(scenariosDir, f))
+              return { name: sc.name, filename: f }
+            } catch { return { name: f, filename: f } }
+          }))
+        } catch (e) { json(res, 500, { error: e.message }) }
+        return
+      }
+
+      // ── POST /scenarios ───────────────────────────────────────────────────
+      if (req.method === 'POST' && req.url === '/scenarios') {
+        try {
+          const body = await readBody(req)
+          if (!body.filename) { json(res, 400, { error: 'filename is required' }); return }
+          if (!body.content)  { json(res, 400, { error: 'content is required' }); return }
+          mkdirSync(scenariosDir, { recursive: true })
+          const filePath = join(scenariosDir, body.filename)
+          writeFileSync(filePath, body.content, 'utf8')
+          json(res, 200, { ok: true, path: filePath })
+        } catch (e) { json(res, 500, { error: e.message }) }
+        return
+      }
+
+      // ── POST /scenario/run ────────────────────────────────────────────────
+      if (req.method === 'POST' && req.url === '/scenario/run') {
+        try {
+          const body = await readBody(req)
+          const files = existsSync(scenariosDir)
+            ? readdirSync(scenariosDir).filter(f => f.endsWith('.scenario.yaml') || f.endsWith('.scenario.yml'))
+            : []
+          let scenarios = files.map(f => loadScenarioConfig(join(scenariosDir, f)))
+          if (body.name) scenarios = scenarios.filter(s => s.name === body.name)
+          const results = await runAllScenarios(scenarios, unitConfigs)
+          json(res, 200, {
+            ok: results.every(r => r.passed),
+            results: results.map(r => ({ name: r.name, passed: r.passed, failReason: r.failReason ?? null })),
+          })
+        } catch (e) { json(res, 500, { error: e.message }) }
         return
       }
 

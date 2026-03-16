@@ -50,7 +50,7 @@ export async function loadProject(projectDir) {
     }
   }
 
-  return { unitConfigs, topics, scenarioConfigs, config }
+  return { unitConfigs, topics, scenarioConfigs, scenariosDir, config }
 }
 
 // ── Unit config loading ───────────────────────────────────────────────────────
@@ -59,16 +59,22 @@ export async function loadUnitConfig(unitFilePath) {
   const yaml = parseYaml(readFileSync(unitFilePath, 'utf8'))
   const unitDir = dirname(unitFilePath)
 
+  const sourceFiles = new Set()
   const rules = []
   for (const decl of yaml.rules ?? []) {
     rules.push(await compileRule(decl, unitDir))
+    if (decl.do) {
+      const hashIdx = decl.do.lastIndexOf('#')
+      if (hashIdx !== -1) sourceFiles.add(resolve(unitDir, decl.do.slice(0, hashIdx)))
+    }
   }
 
   return {
-    name:      yaml.name,
-    channels:  yaml.channels ?? [],
-    stateDecl: yaml.state ?? {},
+    name:        yaml.name,
+    channels:    yaml.channels ?? [],
+    stateDecl:   yaml.state ?? {},
     rules,
+    sourceFiles: [...sourceFiles],
   }
 }
 

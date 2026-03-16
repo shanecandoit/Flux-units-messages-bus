@@ -13,9 +13,9 @@
   <header>
     <div class="logo">Flux <span>Studio</span></div>
     <div class="header-tabs">
-      <button class="tab-btn active" title="BA Scenario Builder">Scenario Builder</button>
-      <button class="tab-btn" title="Coming in Phase 6" disabled style="opacity:0.4" title="Coming in Phase 6">Rule Editor</button>
-      <button class="tab-btn" title="Coming in Phase 4" disabled style="opacity:0.4" title="Coming in Phase 4">Timeline</button>
+      <button class="tab-btn active" onclick="switchView('ba')" title="BA Scenario Builder">Scenario Builder</button>
+      <button class="tab-btn" onclick="switchView('dev')" title="Dev Rule Editor">Rule Editor</button>
+      <button class="tab-btn" onclick="switchView('qa')" title="QA Timeline Inspector">Timeline</button>
     </div>
   </header>
 
@@ -59,6 +59,42 @@
       <button class="btn btn-primary" onclick="exportYaml()">Download .scenario.yaml</button>
     </div>
   </aside>
+
+  <!-- QA view — Timeline Inspector -->
+  <div id="view-qa-panel" class="full-panel" style="display:none">
+    <div class="panel-sidebar">
+      <div class="panel-sidebar-header">Checkpoints</div>
+      <div id="qa-checkpoint-list" class="panel-list">Loading…</div>
+    </div>
+    <div class="panel-main" id="qa-timeline">
+      <div class="empty-state">
+        <h3>Timeline Inspector</h3>
+        <p>Select a checkpoint from the sidebar to browse its message timeline.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dev view — Rule Editor -->
+  <div id="view-dev-panel" class="full-panel" style="display:none">
+    <div class="panel-sidebar">
+      <div class="panel-sidebar-header">Units</div>
+      <div id="dev-unit-list" class="panel-list">Loading…</div>
+    </div>
+    <div class="panel-main dev-editor-wrap">
+      <div class="dev-editor-toolbar">
+        <span id="dev-source-label" style="color:var(--text-dim);font-size:13px">Select a unit</span>
+        <button class="btn btn-primary" id="dev-save-btn" onclick="saveUnitSource()" disabled>Save</button>
+      </div>
+      <textarea id="dev-source" class="code-editor" spellcheck="false" disabled
+                placeholder="Select a unit from the sidebar to edit its rules."></textarea>
+    </div>
+    <div class="panel-results">
+      <div class="panel-results-header">Scenario Results</div>
+      <div id="dev-scenario-results" class="panel-list">
+        <p style="color:var(--text-dim);padding:12px">Select a unit to run its scenarios.</p>
+      </div>
+    </div>
+  </div>
 
 </div>
 
