@@ -47,6 +47,18 @@ export function createRuntimeServer(rt, { unitConfigs, cpDir, scenariosDir }) {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
+    const t0 = Date.now()
+    const { method, url } = req
+    console.log(`→ ${method} ${url}`)
+
+    // Wrap res.end so every response gets a timing line
+    const _end = res.end.bind(res)
+    res.end = (...args) => {
+      console.log(`← ${method} ${url} ${res.statusCode} (${Date.now() - t0}ms)`)
+      res.end = _end
+      return _end(...args)
+    }
+
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
     // ── POST /inject ────────────────────────────────────────────────────────
@@ -207,7 +219,10 @@ export function createRuntimeServer(rt, { unitConfigs, cpDir, scenariosDir }) {
           : []
         let scenarios = files.map(f => loadScenarioConfig(join(scenariosDir, f)))
         if (name) scenarios = scenarios.filter(s => s.name === name)
+        console.log(`  running ${scenarios.length} scenario(s)${name ? ` (filter: "${name}")` : ''}`)
+        const ts = Date.now()
         const results = await runAllScenarios(scenarios, unitConfigs)
+        console.log(`  scenarios done in ${Date.now() - ts}ms — ${results.filter(r => r.passed).length}/${results.length} passed`)
         json(res, 200, {
           ok:      results.every(r => r.passed),
           results: results.map(r => ({
