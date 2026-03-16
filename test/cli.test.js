@@ -266,6 +266,66 @@ describe('Studio API (HTTP)', () => {
     })
     assert.equal(res.status, 400)
   })
+
+  it('GET /checkpoint/:id returns 400 when no checkpoints.dir is configured', async () => {
+    // The simple fixture has no checkpoints.dir — expect a clear error, not a crash
+    const res = await fetch(`http://localhost:${PORT}/checkpoint/nonexistent`)
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error.includes('checkpoints'))
+  })
+})
+
+// ── Studio API — checkpoint round-trip (ecommerce fixture has checkpoints dir) ──
+
+describe('Studio API — checkpoint round-trip', () => {
+  const PORT = 14_101
+  const ECOMMERCE = join(__dirname, '..', 'examples', 'ecommerce')
+  let server
+
+  before(async () => {
+    server = spawn(process.execPath, [FLUX, 'run', ECOMMERCE, `--port=${PORT}`], {
+      cwd: ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('flux run did not start')), 10_000)
+      server.stdout.on('data', chunk => {
+        if (chunk.toString().includes('listening')) { clearTimeout(timeout); resolve() }
+      })
+      server.on('exit', code => { clearTimeout(timeout); reject(new Error(`exited ${code}`)) })
+    })
+  })
+
+  after(() => { server?.kill() })
+
+  it('GET /checkpoint/:id returns full checkpoint after save', async () => {
+    // Inject a message so there is something worth checkpointing
+    await fetch(`http://localhost:${PORT}/inject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic: 'commerce.cart.add', payload: { sku: 'widget', price: 9.99, qty: 1 } }),
+    })
+
+    // Save a named checkpoint
+    const saveRes = await fetch(`http://localhost:${PORT}/checkpoint/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'test-cp' }),
+    })
+    assert.equal(saveRes.status, 200)
+    const { id } = await saveRes.json()
+    assert.ok(id)
+
+    // Load it back via the new route
+    const loadRes = await fetch(`http://localhost:${PORT}/checkpoint/${id}`)
+    assert.equal(loadRes.status, 200)
+    const cp = await loadRes.json()
+    assert.equal(cp.id, id)
+    assert.ok(Array.isArray(cp.bus_log))
+    assert.ok(cp.bus_log.length >= 1)
+    assert.ok(typeof cp.unit_hashes === 'object')
+  })
 })
 
 // ── flux inject (standalone) ──────────────────────────────────────────────────

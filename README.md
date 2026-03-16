@@ -712,7 +712,27 @@ flux studio
 flux dev
 ```
 
-The studio opens at `http://localhost:4000` by default. It reads checkpoint files from the project's `checkpoints/` directory and scenario files from `scenarios/`. It writes defect annotations back to checkpoint files and new/updated scenarios back to `scenarios/`.
+The studio opens at `http://localhost:4000` by default. It communicates with the runtime (`flux run`, default `:4001`) over HTTP. Checkpoint files live in the project's `checkpoints/` directory; scenario files live in `scenarios/`. No database — everything is in files.
+
+### Runtime API (used by the Studio)
+
+The `flux run` server exposes these endpoints. They are also available for scripting and CI.
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/inject` | Inject a message `{ topic, payload }` |
+| `GET` | `/state` | Current state of all units |
+| `GET` | `/bus` | Full message log |
+| `GET` | `/units` | List units with channels, rule names, and source file paths |
+| `GET` | `/unit/:name/source` | Raw `.rules.js` source for a unit |
+| `PUT` | `/unit/:name/source` | Write edited source back to disk |
+| `GET` | `/checkpoints` | List saved checkpoints (summary) |
+| `GET` | `/checkpoint/:id` | Full checkpoint JSON including `bus_log` and `unit_hashes` |
+| `POST` | `/checkpoint/save` | Save current runtime state `{ name? }` |
+| `POST` | `/checkpoint/restore` | Restore runtime to a checkpoint `{ id }` |
+| `GET` | `/scenarios` | List scenario files from `scenarios/` |
+| `POST` | `/scenarios` | Write a scenario file `{ filename, content }` |
+| `POST` | `/scenario/run` | Run all scenarios (or `{ name }` to filter) and return pass/fail |
 
 No database. No server state. Everything is in the files.
 
@@ -1007,9 +1027,9 @@ The project is in active development. Phases are independently shippable.
 | 1 — Core runtime | ✅ Complete | Unit loader, bus, tick loop, channel matching, CLI runner |
 | 2 — Checkpoints | ✅ Complete | Merkle checkpoint, named snapshots, diff, replay |
 | 3 — Scenarios | ✅ Complete | Scenario format, runner, pass/fail, publish gate |
-| 4 — Studio QA view | 🔄 In progress | Timeline inspector, defect filing, causal visualiser |
-| 5 — Studio BA view | 📋 Planned | Scenario builder, transition marker, conflict detection |
-| 6 — Studio Dev view | 📋 Planned | Rule editor, live scenario results, trace drill-down |
+| 4 — Studio QA view | 🔄 In progress | Timeline inspector, checkpoint browser, causal message tree |
+| 5 — Studio BA view | 🔄 In progress | Scenario builder wired to runtime, save to disk, live run |
+| 6 — Studio Dev view | 🔄 In progress | Rule editor, save → auto-run scenarios, trace drill-down |
 | 7 — Compiler | 📋 Planned | Flux IR, type checker, cascade static analysis, C++ codegen |
 | 8 — WASM build | 📋 Planned | Compile to WASM for browser-identical replay in Studio |
 | 9 — Distribution | 📋 Planned | Key partitioning, CRDT state types, rejoin protocol |
@@ -1019,7 +1039,7 @@ The project is in active development. Phases are independently shippable.
 - **JS subset is enforced at runtime, not load time.** Forbidden constructs (closures, `async`, `Date.now`) will throw when first executed, not when the unit is loaded. The `flux check` command catches most violations statically but is not exhaustive. The compiler (Phase 7) will enforce the subset completely.
 - **Topic pattern matching uses string comparison.** The `commerce.cart.*` wildcard is resolved by regex at dispatch time. In the compiled runtime this becomes a jump table indexed by integer enum.
 - **Checkpoints are YAML.** Human-readable and debuggable but large for systems with many units or long bus logs. A binary checkpoint format is planned for Phase 7.
-- **Studio BA and Dev views are in progress.** The Timeline Inspector (QA view) is available now. The Scenario Builder and Rule Editor ship with Phase 5 and 6.
+- **Studio views are scaffolded, not feature-complete.** All three tabs (Scenario Builder, Rule Editor, Timeline) are live and connected to the runtime API. Defect filing, BA run-step navigation, and Dev trace drill-down are still in progress.
 
 ---
 
