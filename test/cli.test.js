@@ -174,6 +174,160 @@ describe('flux run (HTTP API)', () => {
   })
 })
 
+// ── Studio API (new routes) ────────────────────────────────────────────────────
+
+describe('Studio API (HTTP)', () => {
+  const PORT = 14_100
+  let server
+
+  before(async () => {
+    server = spawn(process.execPath, [FLUX, 'run', FIXTURE, `--port=${PORT}`], {
+      cwd: ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('flux run did not start')), 10_000)
+      server.stdout.on('data', chunk => {
+        if (chunk.toString().includes('listening')) { clearTimeout(timeout); resolve() }
+      })
+      server.on('exit', code => { clearTimeout(timeout); reject(new Error(`exited ${code}`)) })
+    })
+  })
+
+  after(() => { server?.kill() })
+
+  it('GET /units returns unit list with name, channels, rules, sourceFiles', async () => {
+    const res = await fetch(`http://localhost:${PORT}/units`)
+    assert.equal(res.status, 200)
+    const units = await res.json()
+    assert.ok(Array.isArray(units))
+    assert.equal(units.length, 1)
+    assert.equal(units[0].name, 'counter')
+    assert.deepEqual(units[0].channels, ['counter.*'])
+    assert.ok(Array.isArray(units[0].rules))
+    assert.ok(units[0].rules.includes('increment'))
+    assert.ok(Array.isArray(units[0].sourceFiles))
+    assert.ok(units[0].sourceFiles[0].endsWith('counter.rules.js'))
+  })
+
+  it('GET /unit/counter/source returns JS source text', async () => {
+    const res = await fetch(`http://localhost:${PORT}/unit/counter/source`)
+    assert.equal(res.status, 200)
+    const src = await res.text()
+    assert.ok(src.includes('export function'))
+  })
+
+  it('GET /unit/nonexistent/source returns 404', async () => {
+    const res = await fetch(`http://localhost:${PORT}/unit/nonexistent/source`)
+    assert.equal(res.status, 404)
+  })
+
+  it('GET /scenarios returns scenario list', async () => {
+    const res = await fetch(`http://localhost:${PORT}/scenarios`)
+    assert.equal(res.status, 200)
+    const list = await res.json()
+    assert.ok(Array.isArray(list))
+    assert.ok(list.length >= 1)
+    assert.ok(list[0].name)
+    assert.ok(list[0].filename.endsWith('.scenario.yaml') || list[0].filename.endsWith('.scenario.yml'))
+  })
+
+  it('POST /scenario/run runs all scenarios and returns results', async () => {
+    const res = await fetch(`http://localhost:${PORT}/scenario/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.ok(Array.isArray(body.results))
+    assert.ok(body.results.length >= 1)
+    assert.equal(body.results[0].passed, true)
+    assert.ok('name' in body.results[0])
+  })
+
+  it('POST /scenario/run with name filter runs matching scenario', async () => {
+    const res = await fetch(`http://localhost:${PORT}/scenario/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Basic counter' }),
+    })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.results.length, 1)
+    assert.equal(body.results[0].name, 'Basic counter')
+  })
+
+  it('POST /scenarios requires filename and content', async () => {
+    const res = await fetch(`http://localhost:${PORT}/scenarios`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'name: test' }),
+    })
+    assert.equal(res.status, 400)
+  })
+
+  it('GET /checkpoint/:id returns 400 when no checkpoints.dir is configured', async () => {
+    // The simple fixture has no checkpoints.dir — expect a clear error, not a crash
+    const res = await fetch(`http://localhost:${PORT}/checkpoint/nonexistent`)
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.ok(body.error.includes('checkpoints'))
+  })
+})
+
+// ── Studio API — checkpoint round-trip (ecommerce fixture has checkpoints dir) ──
+
+describe('Studio API — checkpoint round-trip', () => {
+  const PORT = 14_101
+  const ECOMMERCE = join(__dirname, '..', 'examples', 'ecommerce')
+  let server
+
+  before(async () => {
+    server = spawn(process.execPath, [FLUX, 'run', ECOMMERCE, `--port=${PORT}`], {
+      cwd: ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('flux run did not start')), 10_000)
+      server.stdout.on('data', chunk => {
+        if (chunk.toString().includes('listening')) { clearTimeout(timeout); resolve() }
+      })
+      server.on('exit', code => { clearTimeout(timeout); reject(new Error(`exited ${code}`)) })
+    })
+  })
+
+  after(() => { server?.kill() })
+
+  it('GET /checkpoint/:id returns full checkpoint after save', async () => {
+    // Inject a message so there is something worth checkpointing
+    await fetch(`http://localhost:${PORT}/inject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic: 'commerce.cart.add', payload: { sku: 'widget', price: 9.99, qty: 1 } }),
+    })
+
+    // Save a named checkpoint
+    const saveRes = await fetch(`http://localhost:${PORT}/checkpoint/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'test-cp' }),
+    })
+    assert.equal(saveRes.status, 200)
+    const { id } = await saveRes.json()
+    assert.ok(id)
+
+    // Load it back via the new route
+    const loadRes = await fetch(`http://localhost:${PORT}/checkpoint/${id}`)
+    assert.equal(loadRes.status, 200)
+    const cp = await loadRes.json()
+    assert.equal(cp.id, id)
+    assert.ok(Array.isArray(cp.bus_log))
+    assert.ok(cp.bus_log.length >= 1)
+    assert.ok(typeof cp.unit_hashes === 'object')
+  })
+})
+
 // ── flux inject (standalone) ──────────────────────────────────────────────────
 
 describe('flux inject (no runtime)', () => {

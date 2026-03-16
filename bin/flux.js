@@ -43,23 +43,6 @@ function projectDir(positional) {
   return resolve(positional[0] ?? process.cwd())
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = ''
-    req.on('data', d => { body += d })
-    req.on('end', () => {
-      try { resolve(body ? JSON.parse(body) : {}) }
-      catch (e) { reject(e) }
-    })
-    req.on('error', reject)
-  })
-}
-
-function json(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
-  res.end(JSON.stringify(body, null, 2))
-}
-
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 const commands = {
@@ -71,11 +54,10 @@ const commands = {
     const port = Number(flags.port ?? RUNTIME_PORT)
 
     const { loadProject, createRuntime } = await import('../src/loader.js')
-    const { buildCheckpoint, saveCheckpoint, loadCheckpoint, listCheckpoints, restoreCheckpoint } =
-      await import('../src/checkpoint.js')
+    const { createRuntimeServer } = await import('../src/server.js')
 
     console.log(`Loading project from ${dir}`)
-    const { unitConfigs, config } = await loadProject(dir)
+    const { unitConfigs, scenariosDir, config } = await loadProject(dir)
 
     if (unitConfigs.length === 0) {
       console.error('No unit files found. Create *.unit.yaml files in the units/ directory.')
@@ -85,108 +67,9 @@ const commands = {
     const rt = createRuntime(unitConfigs)
     console.log(`Loaded ${unitConfigs.length} unit(s): ${unitConfigs.map(u => u.name).join(', ')}`)
 
-    // Resolve the checkpoints directory from config (null if not configured)
-    const cpDir = config.checkpoints?.dir
-      ? resolve(dir, config.checkpoints.dir)
-      : null
+    const cpDir = config.checkpoints?.dir ? resolve(dir, config.checkpoints.dir) : null
 
-    const server = createServer(async (req, res) => {
-      res.setHeader('Access-Control-Allow-Origin', '*')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204); res.end(); return
-      }
-
-      // ── POST /inject ──────────────────────────────────────────────────────
-      if (req.method === 'POST' && req.url === '/inject') {
-        try {
-          const body = await readBody(req)
-          const { topic, payload = {} } = body
-          if (!topic) { json(res, 400, { error: 'topic is required' }); return }
-
-          const entries = rt.inject(topic, payload)
-          console.log(`  → ${topic} (${entries.length} messages)`)
-
-          // Auto-save a checkpoint after each quiescence if a directory is configured
-          if (cpDir) {
-            const cp = buildCheckpoint(rt)
-            await saveCheckpoint(cp, cpDir)
-          }
-
-          json(res, 200, { ok: true, entries })
-        } catch (e) {
-          json(res, 400, { error: e.message })
-        }
-        return
-      }
-
-      // ── GET /state ────────────────────────────────────────────────────────
-      if (req.method === 'GET' && req.url === '/state') {
-        const state = {}
-        for (const name of unitConfigs.map(u => u.name)) {
-          const unitState = rt.state(name)
-          if (!unitState) continue
-          state[name] = {}
-          for (const [k, table] of Object.entries(unitState)) {
-            state[name][k] = table.all ? table.all() : table
-          }
-        }
-        json(res, 200, state)
-        return
-      }
-
-      // ── GET /bus ──────────────────────────────────────────────────────────
-      if (req.method === 'GET' && req.url === '/bus') {
-        json(res, 200, rt.bus.log)
-        return
-      }
-
-      // ── GET /checkpoints ──────────────────────────────────────────────────
-      if (req.method === 'GET' && req.url === '/checkpoints') {
-        if (!cpDir) { json(res, 400, { error: 'No checkpoints.dir configured' }); return }
-        const list = await listCheckpoints(cpDir)
-        json(res, 200, list.map(cp => ({
-          id: cp.id, name: cp.name, timestamp: cp.timestamp,
-          tick: cp.tick, merkle_root: cp.merkle_root,
-        })))
-        return
-      }
-
-      // ── POST /checkpoint/save ─────────────────────────────────────────────
-      if (req.method === 'POST' && req.url === '/checkpoint/save') {
-        if (!cpDir) { json(res, 400, { error: 'No checkpoints.dir configured' }); return }
-        try {
-          const body = await readBody(req)
-          const cp = buildCheckpoint(rt, { name: body.name ?? null })
-          const filePath = await saveCheckpoint(cp, cpDir)
-          console.log(`  ✓ Checkpoint saved: ${cp.id}${cp.name ? ` (${cp.name})` : ''}`)
-          json(res, 200, { ok: true, id: cp.id, name: cp.name, path: filePath })
-        } catch (e) {
-          json(res, 500, { error: e.message })
-        }
-        return
-      }
-
-      // ── POST /checkpoint/restore ──────────────────────────────────────────
-      if (req.method === 'POST' && req.url === '/checkpoint/restore') {
-        if (!cpDir) { json(res, 400, { error: 'No checkpoints.dir configured' }); return }
-        try {
-          const body = await readBody(req)
-          if (!body.id) { json(res, 400, { error: 'id is required' }); return }
-          const cp = await loadCheckpoint(body.id, cpDir)
-          restoreCheckpoint(rt, cp)
-          console.log(`  ✓ Restored to checkpoint ${cp.id} (tick ${cp.tick})`)
-          json(res, 200, { ok: true, id: cp.id, tick: cp.tick })
-        } catch (e) {
-          json(res, 404, { error: e.message })
-        }
-        return
-      }
-
-      json(res, 404, { error: 'not found' })
-    })
-
+    const server = createRuntimeServer(rt, { unitConfigs, cpDir, scenariosDir })
     server.listen(port, () => {
       console.log(`Runtime listening on http://localhost:${port}`)
       console.log('  POST /inject              { "topic": "...", "payload": {...} }')

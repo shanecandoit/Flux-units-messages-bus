@@ -638,3 +638,169 @@ if (state.scenarios.length === 0) {
 }
 
 render()
+
+// ── View switching ────────────────────────────────────────────────────────────
+
+const BASE = 'http://localhost:4001'
+
+let currentView = 'ba'
+
+function switchView(v) {
+  currentView = v
+  const baParts = ['.sidebar', '.main', '.detail']
+  baParts.forEach(sel => {
+    const el = document.querySelector(sel)
+    if (el) el.style.display = v === 'ba' ? '' : 'none'
+  })
+  document.getElementById('view-qa-panel').style.display = v === 'qa' ? 'flex' : 'none'
+  document.getElementById('view-dev-panel').style.display = v === 'dev' ? 'flex' : 'none'
+  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', (i === 0 && v === 'ba') || (i === 1 && v === 'dev') || (i === 2 && v === 'qa'))
+  })
+  if (v === 'qa')  loadQAView()
+  if (v === 'dev') loadDevView()
+}
+
+// ── QA view — Timeline Inspector ──────────────────────────────────────────────
+
+async function loadQAView() {
+  const el = document.getElementById('qa-checkpoint-list')
+  el.textContent = 'Loading…'
+  try {
+    const res = await fetch(`${BASE}/checkpoints`)
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    const list = await res.json()
+    if (list.length === 0) {
+      el.textContent = 'No checkpoints found. Inject some messages and save a checkpoint first.'
+      return
+    }
+    el.innerHTML = list.map(cp => `
+      <div class="list-row" onclick="loadTimeline(${escAttr(JSON.stringify(cp.id))})">
+        <span class="row-primary">${escHtml(cp.id)}</span>
+        ${cp.name ? `<span class="row-secondary">${escHtml(cp.name)}</span>` : ''}
+        <span class="row-meta">tick ${cp.tick}</span>
+      </div>
+    `).join('')
+  } catch (e) {
+    el.innerHTML = `<p class="error-note">Could not reach runtime: ${escHtml(e.message)}<br>Is <code>flux run</code> running?</p>`
+  }
+}
+
+async function loadTimeline(id) {
+  const el = document.getElementById('qa-timeline')
+  el.textContent = 'Loading…'
+  try {
+    const res = await fetch(`${BASE}/checkpoint/${encodeURIComponent(id)}`)
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    renderTimeline(await res.json())
+  } catch (e) {
+    el.innerHTML = `<p class="error-note">Error: ${escHtml(e.message)}</p>`
+  }
+}
+
+function renderTimeline(cp) {
+  const el = document.getElementById('qa-timeline')
+  const log = cp.bus_log ?? []
+  if (log.length === 0) { el.textContent = 'No messages in this checkpoint.'; return }
+  el.innerHTML =
+    `<div class="timeline-header">
+       <strong>${escHtml(cp.id)}</strong>
+       ${cp.name ? `<span class="row-secondary">${escHtml(cp.name)}</span>` : ''}
+       <span class="row-meta">${log.length} message(s) · tick ${cp.tick}</span>
+     </div>` +
+    log.map(m => `
+      <div class="timeline-row ${m.parentId !== null ? 'msg-child' : 'msg-root'}">
+        <span class="msg-id">#${m.id}</span>
+        <span class="msg-topic">${escHtml(m.topic)}</span>
+        <span class="msg-payload">${escHtml(JSON.stringify(m.payload))}</span>
+        ${m.parentId !== null ? `<span class="msg-parent">← #${m.parentId}</span>` : ''}
+      </div>
+    `).join('')
+}
+
+// ── Dev view — Rule Editor ────────────────────────────────────────────────────
+
+let devSelectedUnit = null
+
+async function loadDevView() {
+  const el = document.getElementById('dev-unit-list')
+  el.textContent = 'Loading…'
+  try {
+    const res = await fetch(`${BASE}/units`)
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    const units = await res.json()
+    if (units.length === 0) { el.textContent = 'No units found.'; return }
+    el.innerHTML = units.map(u => `
+      <div class="list-row" id="unit-row-${escAttr(u.name)}" onclick="selectUnit(${escAttr(JSON.stringify(u.name))})">
+        <span class="row-primary">${escHtml(u.name)}</span>
+        <span class="row-meta">${u.rules.length} rule(s)</span>
+      </div>
+    `).join('')
+  } catch (e) {
+    el.innerHTML = `<p class="error-note">Could not reach runtime: ${escHtml(e.message)}</p>`
+  }
+}
+
+async function selectUnit(name) {
+  devSelectedUnit = name
+  document.querySelectorAll('#dev-unit-list .list-row').forEach(r => {
+    r.classList.toggle('active', r.id === `unit-row-${name}`)
+  })
+  const srcEl = document.getElementById('dev-source')
+  const label = document.getElementById('dev-source-label')
+  srcEl.value = 'Loading…'
+  srcEl.disabled = true
+  document.getElementById('dev-save-btn').disabled = true
+  label.textContent = name
+  try {
+    const res = await fetch(`${BASE}/unit/${encodeURIComponent(name)}/source`)
+    if (!res.ok) { srcEl.value = `Error: ${(await res.json()).error}`; return }
+    srcEl.value = await res.text()
+    srcEl.disabled = false
+    document.getElementById('dev-save-btn').disabled = false
+    loadDevScenarios()
+  } catch (e) {
+    srcEl.value = `Error: ${e.message}`
+  }
+}
+
+async function saveUnitSource() {
+  if (!devSelectedUnit) return
+  const src = document.getElementById('dev-source').value
+  try {
+    const res = await fetch(`${BASE}/unit/${encodeURIComponent(devSelectedUnit)}/source`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: src,
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    showToast('Saved — running scenarios…')
+    loadDevScenarios()
+  } catch (e) {
+    showToast(`Save failed: ${e.message}`)
+  }
+}
+
+async function loadDevScenarios() {
+  const el = document.getElementById('dev-scenario-results')
+  el.textContent = 'Running…'
+  try {
+    const res = await fetch(`${BASE}/scenario/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    const { results } = await res.json()
+    if (results.length === 0) { el.textContent = 'No scenarios found.'; return }
+    el.innerHTML = results.map(r => `
+      <div class="scenario-result ${r.passed ? 'pass' : 'fail'}">
+        <span class="result-icon">${r.passed ? '✓' : '✗'}</span>
+        <span class="result-name">${escHtml(r.name)}</span>
+        ${!r.passed && r.failReason ? `<div class="result-detail">${escHtml(r.failReason)}</div>` : ''}
+      </div>
+    `).join('')
+  } catch (e) {
+    el.innerHTML = `<p class="error-note">Could not run scenarios: ${escHtml(e.message)}</p>`
+  }
+}
